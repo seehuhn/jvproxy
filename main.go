@@ -27,7 +27,6 @@ import (
 	_ "github.com/mattn/go-sqlite3" // we use the sqlite3 backend for gorp
 	"github.com/seehuhn/trace"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -43,6 +42,7 @@ type logEntry struct {
 	RemoteAddr          string
 	Method              string
 	RequestURI          string
+	ContentLength       int64
 	CacheResult         string
 	Comment             string
 	HandlerDurationNano int64
@@ -121,7 +121,7 @@ func (s *Store) fileName(id int64) string {
 }
 
 func (s *Store) Lookup(urlHash []byte, header http.Header,
-	logLine *logEntry) (res *indexEntry, err error) {
+	log *logEntry) (res *indexEntry, err error) {
 	entries := []indexEntry{}
 	_, err = s.index.Select(&entries,
 		"SELECT * FROM `index` WHERE Hash=? ORDER BY LENGTH(Vary)", urlHash)
@@ -130,7 +130,7 @@ func (s *Store) Lookup(urlHash []byte, header http.Header,
 	}
 
 	if len(entries) > 0 {
-		logLine.Comment += strconv.Itoa(len(entries)) + " variants "
+		log.Comment += strconv.Itoa(len(entries)) + " variants "
 	}
 
 	for _, entry := range entries {
@@ -190,16 +190,16 @@ func parseDate(dateStr string) time.Time {
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	requestTime := time.Now()
-	logLine := &logEntry{
+	log := &logEntry{
 		RequestTimeNano: requestTime.UnixNano(),
 		RemoteAddr:      r.RemoteAddr,
 		Method:          r.Method,
 		RequestURI:      r.RequestURI,
 	}
 	defer func() {
-		logLine.HandlerDurationNano =
+		log.HandlerDurationNano =
 			int64(time.Since(requestTime) / time.Nanosecond)
-		store.index.Insert(logLine)
+		store.index.Insert(log)
 	}()
 
 	via := r.Proto + " jvproxy"
@@ -207,7 +207,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		via = via[5:]
 	}
 
-	canServeFromCache, canStoreInCache := canUseCache(r.Header, logLine)
+	canServeFromCache, canStoreInCache := canUseCache(r.Header, log)
 
 	var err error
 	var entry *indexEntry
@@ -215,9 +215,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	hash := sha256.Sum224([]byte(r.URL.String()))
 
 	if canServeFromCache {
-		entry, err = store.Lookup(hash[:], r.Header, logLine)
+		entry, err = store.Lookup(hash[:], r.Header, log)
 		if err != nil {
-			log.Print(err)
+			trace.T("jvproxy/handler", trace.PrioDebug,
+				"cache lookup failed: %s", err.Error())
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -261,14 +262,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		}
 		store.Complete(entry)
 
-		logLine.CacheResult = "HIT"
+		log.CacheResult = "HIT"
 		fmt.Println("CACHE HIT:", r.URL.String())
 	} else {
 		r.Header.Add("Via", via)
 		resp, err := client.RoundTrip(r)
 		responseTime := time.Now()
 		if err != nil {
-			log.Print(err)
+			trace.T("jvproxy/handler", trace.PrioDebug,
+				"upstream server request failed: %s", err.Error())
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -322,7 +324,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				h.Add(key, val)
 			}
 		}
-		// TODO(voss): remove pre-hop headers
+		// TODO(voss): remove per-hop headers
 		h.Add("Via", via)
 		w.WriteHeader(resp.StatusCode)
 
@@ -380,11 +382,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				trace.T("jvproxy/handler", trace.PrioDebug,
 					"error while storing new entry in the DB: %s", err.Error())
 			}
-			logLine.CacheResult = "MISS,STORE"
+			log.CacheResult = "MISS,STORE"
 			fmt.Println("CACHE MISS, STORE:", r.URL.String())
 		} else {
 			io.Copy(w, resp.Body)
-			logLine.CacheResult = "MISS,NOSTORE"
+			log.CacheResult = "MISS,NOSTORE"
 			fmt.Println("CACHE MISS, NOSTORE:", r.URL.String())
 		}
 
