@@ -1,0 +1,45 @@
+access to the store
+===================
+
+compute request hash
+
+search entry by hash
+
+if the entry is fresh:
+	source = file
+else:
+	atomically, if the request is already in progress:
+		wait for progress ?????
+	else:
+		mark the request as being in progress
+	if the entry is stale:
+		revalidate with server
+		if still valid:
+			update entry
+			source = file
+			mark as no longer being in progress
+		else:
+			remove entry, mark file for removal
+			source = server
+	elif the entry is missing:
+		request from server
+		source = server
+
+if source == server:
+	if enough space:
+		deliver server response to client and write to file
+		write entry
+		mark as no longer being in progress
+	else:
+		mark as no longer being in progress
+		deliver server response to client
+else:
+	deliver file to client *** beware of incomplete files
+	update entry *** careful, entry may have changed
+
+
+references
+==========
+
+http://www.w3.org/Protocols/rfc2616/rfc2616.txt
+http://tools.ietf.org/html/rfc7234
