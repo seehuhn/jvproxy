@@ -1,0 +1,25 @@
+<html>
+<header>
+<title>recent requests</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<link rel="stylesheet" href="/css/main.css" type="text/css">
+</header>
+<body>
+<table>
+<tr>
+<th>Id
+<th>Cache
+<th>Code
+<th>Size
+<th>URI
+{{range .}}
+<tr>
+<td>{{.Id}}
+<td>{{.CacheResult}}
+<td>{{.StatusCode}}
+<td>{{.ContentLength}}
+<td>{{.RequestURI}}
+{{end}}
+</table>
+</body>
+</html>

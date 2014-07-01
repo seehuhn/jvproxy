@@ -26,6 +26,7 @@ import (
 	"github.com/coopernurse/gorp"
 	_ "github.com/mattn/go-sqlite3" // we use the sqlite3 backend for gorp
 	"github.com/seehuhn/trace"
+	"html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -42,6 +43,7 @@ type logEntry struct {
 	RemoteAddr          string
 	Method              string
 	RequestURI          string
+	StatusCode          int
 	ContentLength       int64
 	CacheResult         string
 	Comment             string
@@ -189,6 +191,11 @@ func parseDate(dateStr string) time.Time {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Host == "" {
+		statsMux.ServeHTTP(w, r)
+		return
+	}
+
 	requestTime := time.Now()
 	log := &logEntry{
 		RequestTimeNano: requestTime.UnixNano(),
@@ -207,13 +214,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		via = via[5:]
 	}
 
-	canServeFromCache, canStoreInCache := canUseCache(r.Header, log)
-
 	var err error
 	var entry *indexEntry
 
 	hash := sha256.Sum224([]byte(r.URL.String()))
-
+	canServeFromCache, canStoreInCache := canUseCache(r.Header, log)
 	if canServeFromCache {
 		entry, err = store.Lookup(hash[:], r.Header, log)
 		if err != nil {
@@ -247,7 +252,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(entry.StatusCode)
 
 		f, err = os.Open(fname)
-		_, e2 = io.Copy(w, f)
+		n, e2 := io.Copy(w, f)
 		if err == nil {
 			err = e2
 		}
@@ -263,6 +268,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		store.Complete(entry)
 
 		log.CacheResult = "HIT"
+		log.StatusCode = entry.StatusCode
+		log.ContentLength = n
 		fmt.Println("CACHE HIT:", r.URL.String())
 	} else {
 		r.Header.Add("Via", via)
@@ -275,6 +282,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		log.StatusCode = resp.StatusCode
 		switch resp.StatusCode {
 		case 200, 203, 300, 301, 410:
 			// pass
@@ -294,9 +302,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		_ = cc
 
 		expires := parseDate(resp.Header.Get("Expires"))
-		if !expires.IsZero() {
-			fmt.Println("Expires = ", expires)
-		} else {
+		if expires.IsZero() {
 			// http://tools.ietf.org/html/rfc7234#section-4.2.3
 			age, _ := strconv.Atoi(resp.Header.Get("Age"))
 			ageValue := time.Duration(age) * time.Second
@@ -365,9 +371,16 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			io.Copy(w, io.TeeReader(resp.Body, f))
-
-			f.Close()
+			n, err := io.Copy(w, io.TeeReader(resp.Body, f))
+			e2 = f.Close()
+			if err == nil {
+				err = e2
+			}
+			if err != nil {
+				trace.T("jvproxy/handler", trace.PrioDebug,
+					"error while storing file in cache: %s", err.Error())
+			}
+			// TODO(voss): compare n to the server-provided Content-Length
 
 			entry.Vary = strings.Join(resp.Header["Vary"], ":")
 			if entry.Vary != "" {
@@ -376,6 +389,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			}
 			entry.StatusCode = resp.StatusCode
 			entry.ExpiryTime = expires.Unix()
+			entry.ContentLength = n
 			entry.Hash = hash[:]
 			_, err = store.index.Update(entry)
 			if err != nil {
@@ -383,6 +397,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 					"error while storing new entry in the DB: %s", err.Error())
 			}
 			log.CacheResult = "MISS,STORE"
+			log.ContentLength = n
 			fmt.Println("CACHE MISS, STORE:", r.URL.String())
 		} else {
 			io.Copy(w, resp.Body)
@@ -393,6 +408,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		resp.Body.Close()
 	}
 }
+
+var statsMux = http.NewServeMux()
 
 func main() {
 	flag.Parse()
@@ -405,6 +422,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: cannot open store, %s\n", err.Error())
 		os.Exit(1)
 	}
+
+	logTmpl = template.Must(template.ParseFiles("tmpl/log.html"))
+
+	statsMux.HandleFunc("/log", store.logHandler)
+	statsMux.Handle("/", http.StripPrefix("/css", http.FileServer(http.Dir("css"))))
 
 	server := &http.Server{
 		Addr:         ":8080",
