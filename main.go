@@ -37,6 +37,9 @@ import (
 	"time"
 )
 
+const listenAddr = "localhost:8080"
+const listenAddrTLS = "localhost:8081"
+
 type logEntry struct {
 	Id                  int64
 	RequestTimeNano     int64
@@ -191,7 +194,7 @@ func parseDate(dateStr string) time.Time {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Host == "" {
+	if r.URL.Host == "" || r.URL.Host == listenAddr {
 		statsMux.ServeHTTP(w, r)
 		return
 	}
@@ -428,8 +431,18 @@ func main() {
 	statsMux.HandleFunc("/log", store.logHandler)
 	statsMux.Handle("/", http.StripPrefix("/css", http.FileServer(http.Dir("css"))))
 
+	go func() {
+		server := &http.Server{
+			Addr:         listenAddrTLS,
+			Handler:      http.HandlerFunc(handler),
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		server.ListenAndServeTLS("cert.pem", "key.pem")
+	}()
+
 	server := &http.Server{
-		Addr:         ":8080",
+		Addr:         listenAddr,
 		Handler:      http.HandlerFunc(handler),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,

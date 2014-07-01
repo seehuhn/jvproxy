@@ -26,3 +26,11 @@ TODO
 - add more unit tests
 - optimise speed for concurrent access
 - add a mechanism for pruning the cache
+- try to handle HTTPS
+
+REFERENCES
+----------
+
+- http://tools.ietf.org/html/rfc2616
+- http://tools.ietf.org/html/rfc7234
+- https://github.com/elazarl/goproxy
