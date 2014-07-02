@@ -427,11 +427,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	summaryTmpl = template.Must(template.New("summary.html").
+		Funcs(tmplFuncs).ParseFiles("tmpl/summary.html"))
 	logTmpl = template.Must(template.New("log.html").
 		Funcs(tmplFuncs).ParseFiles("tmpl/log.html"))
 	storeTmpl = template.Must(template.New("store.html").
 		Funcs(tmplFuncs).ParseFiles("tmpl/store.html"))
 
+	statsMux.HandleFunc("/", store.summaryHandler)
 	statsMux.HandleFunc("/log", store.logHandler)
 	statsMux.HandleFunc("/store", store.storeHandler)
 	statsMux.Handle("/css/",

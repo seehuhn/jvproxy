@@ -2,27 +2,31 @@
 <html>
 <head>
 <link href='http://fonts.googleapis.com/css?family=Roboto+Condensed%7cRoboto:400,700' rel='stylesheet' type='text/css'>
-<title>access log - {{.ListenAddr}}</title>
+<title>summary - {{.ListenAddr}}</title>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <link rel="stylesheet" href="/css/normalize.css" type="text/css">
 <link rel="stylesheet" href="/css/main.css" type="text/css">
 </head>
 <body>
 <h1>JvProxy &mdash; {{.ListenAddr}}</h1>
-<h2>Access Log</h2>
-<table class="list compact">
+<h2>Summary</h2>
+<h3>Access Log</h3>
+<table class="list">
 <tr>
-<th>Time
-<th>Cache
-<th>Code
-<th>Size
-<th>URI
-{{range .Entries}}<tr>
-<td class="sq">{{.RequestTimeNano | FormatDateNano}}
+<th>Cache Result
+<th>Total Count
+<th>Total Size
+{{range .Log}}<tr>
 <td>{{.CacheResult}}
-<td>{{.StatusCode}}
-<td>{{.ContentLength}}
-<td class="sq"><span class="too-large">{{.RequestURI}}</span>
+<td>{{.TotalCount}}
+<td>{{.TotalSize}}
 {{end}}</table>
+<p><a href="/log">details &hellip;</a>
+<h3>Store</h3>
+<dl>
+<dt>total size
+<dd>{{.StoreTotal}}
+</dl>
+<p><a href="/store">details &hellip;</a>
 </body>
 </html>

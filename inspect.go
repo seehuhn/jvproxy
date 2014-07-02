@@ -8,12 +8,67 @@ import (
 )
 
 var tmplFuncs = template.FuncMap{
-	"FormatDate": formatDate,
+	"FormatDate":     formatDate,
+	"FormatDateNano": formatDateNano,
 }
 
 func formatDate(unixNano int64) template.HTML {
-	s := time.Unix(0, unixNano).Format("2006-01-02&nbsp;15:04:05.000")
+	t := time.Unix(unixNano, 0)
+	s := "&mdash;"
+	if !t.IsZero() {
+		s = t.Format("2006-01-02&nbsp;15:04:05")
+	}
 	return template.HTML(s)
+}
+
+func formatDateNano(unixNano int64) template.HTML {
+	t := time.Unix(0, unixNano)
+	s := "&mdash;"
+	if !t.IsZero() {
+		s = t.Format("2006-01-02&nbsp;15:04:05.000")
+	}
+	return template.HTML(s)
+}
+
+var summaryTmpl *template.Template
+
+func (s *Store) summaryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	var summaryData struct {
+		ListenAddr string
+		Log        []struct {
+			CacheResult string
+			TotalCount  int
+			TotalSize   int64
+		}
+		StoreTotal int64
+	}
+
+	summaryData.ListenAddr = listenAddr
+
+	_, err := s.index.Select(&summaryData.Log,
+		`SELECT CacheResult, COUNT(*) as TotalCount,
+				SUM(ContentLength) AS TotalSize FROM log
+		 GROUP BY CacheResult;`)
+	if err != nil {
+		trace.T("jvproxy/stats", trace.PrioDebug,
+			"reading summary data failed: %s", err.Error())
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	summaryData.StoreTotal, err = s.index.SelectInt(
+		"SELECT SUM(ContentLength) FROM `index`")
+
+	err = summaryTmpl.Execute(w, summaryData)
+	if err != nil {
+		trace.T("jvproxy/stats", trace.PrioDebug,
+			"rendering summary data into template failed: %s", err.Error())
+	}
 }
 
 var logTmpl *template.Template

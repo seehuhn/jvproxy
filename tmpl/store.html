@@ -1,27 +1,32 @@
+<!DOCTYPE html>
 <html>
 <head>
-<link href='http://fonts.googleapis.com/css?family=Roboto+Condensed|Roboto:400,700' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Roboto+Condensed%7cRoboto:400,700' rel='stylesheet' type='text/css'>
 <title>store log - {{.ListenAddr}}</title>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-<link rel="stylesheet" href="/css/normalise.css" type="text/css">
+<link rel="stylesheet" href="/css/normalize.css" type="text/css">
 <link rel="stylesheet" href="/css/main.css" type="text/css">
 </head>
 <body>
 <h1>JvProxy &mdash; {{.ListenAddr}}</h1>
 <h2>Store Log</h2>
-<table class="list">
+<table class="list compact">
 <tr>
 <th>DownloadTime
 <th>Code
 <th>Size
+<th>Last Used
+<th>Expires
 <th>Vary
-{{range .Entries}}
-<tr>
-<td class="sq">{{.DownloadTimeNano | FormatDate}}
+<th>ETag
+{{range .Entries}}<tr>
+<td class="sq">{{.DownloadTimeNano | FormatDateNano}}
 <td>{{.StatusCode}}
 <td>{{.ContentLength}}
+<td>{{.LastUsedTime | FormatDate}}
+<td>{{.ExpiryTime | FormatDate}}
 <td>{{.Vary}}
-{{end}}
-</table>
+<td>{{.ETag}}
+{{end}}</table>
 </body>
 </html>

@@ -1,9 +1,14 @@
 HTML {
     color: #222;
-    background: #EEE;
+    background: white;
 }
 BODY {
+    margin: 0 16px;
     font-family: 'Roboto', sans-serif;
+}
+
+H1 {
+    display: none;
 }
 
 /* tables */
@@ -11,10 +16,17 @@ TD, TH {
     text-align: left;
     vertical-align: inherit;
 }
+TH {
+    color: #888;
+}
 TR {
     vertical-align: baseline;
 }
 TABLE {
+    font-size: inherit;
+    line-height: inherit;
+}
+TABLE.compact {
     font-size: 13px;
     line-height: 15px;
 }
@@ -28,7 +40,7 @@ TABLE *.r {
     text-align: right;
 }
 TABLE.list {
-    margin: 1ex 0 1ex 1.5em;
+    margin: 1ex 0;
     border: none;
     padding: 0;
     border-collapse: collapse;
@@ -47,6 +59,9 @@ TABLE.list TH:first-child, TABLE.list TD:first-child {
     font-family: 'Roboto Condensed', sans-serif;
 }
 .too-large {
+    margin: 0;
+    border: none;
+    padding: 0;
     max-width: 40em;
     display: inline-block;
     white-space: nowrap;
