@@ -54,17 +54,17 @@ type logEntry struct {
 }
 
 type indexEntry struct {
-	Id            int64
-	Hash          []byte // hash of the request url
-	Vary          string // colon-separated Vary fields of the response
-	VaryHash      []byte // hash of the response Vary information
-	StatusCode    int
-	ModTime       int64
-	DownLoadTime  int64
-	ExpiryTime    int64
-	LastUsedTime  int64 // time of last access (seconds since Jan 1, 1970, UTC)
-	ETag          string
-	ContentLength int64
+	Id               int64
+	Hash             []byte // hash of the request url
+	Vary             string // colon-separated Vary fields of the response
+	VaryHash         []byte // hash of the response Vary information
+	StatusCode       int
+	ModTime          int64
+	DownloadTimeNano int64
+	ExpiryTime       int64
+	LastUsedTime     int64 // time of last access (seconds since Jan 1, 1970, UTC)
+	ETag             string
+	ContentLength    int64
 }
 
 type Store struct {
@@ -391,6 +391,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 					resp.Header)
 			}
 			entry.StatusCode = resp.StatusCode
+			entry.DownloadTimeNano = responseTime.UnixNano()
 			entry.ExpiryTime = expires.Unix()
 			entry.ContentLength = n
 			entry.Hash = hash[:]
@@ -426,10 +427,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	logTmpl = template.Must(template.ParseFiles("tmpl/log.html"))
+	logTmpl = template.Must(template.New("log.html").
+		Funcs(tmplFuncs).ParseFiles("tmpl/log.html"))
+	storeTmpl = template.Must(template.New("store.html").
+		Funcs(tmplFuncs).ParseFiles("tmpl/store.html"))
 
 	statsMux.HandleFunc("/log", store.logHandler)
-	statsMux.Handle("/", http.StripPrefix("/css", http.FileServer(http.Dir("css"))))
+	statsMux.HandleFunc("/store", store.storeHandler)
+	statsMux.Handle("/css/",
+		http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
 
 	go func() {
 		server := &http.Server{

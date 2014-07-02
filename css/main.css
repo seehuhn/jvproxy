@@ -1,7 +1,59 @@
 HTML {
+    color: #222;
+    background: #EEE;
 }
 BODY {
+    font-family: 'Roboto', sans-serif;
 }
-TH {
+
+/* tables */
+TD, TH {
     text-align: left;
+    vertical-align: inherit;
+}
+TR {
+    vertical-align: baseline;
+}
+TABLE {
+    font-size: 13px;
+    line-height: 15px;
+}
+TABLE *.l {
+    text-align: left;
+}
+TABLE *.c {
+    text-align: center;
+}
+TABLE *.r {
+    text-align: right;
+}
+TABLE.list {
+    margin: 1ex 0 1ex 1.5em;
+    border: none;
+    padding: 0;
+    border-collapse: collapse;
+}
+TABLE.list TH {
+    padding: 0 0 0.5ex 1em;
+}
+TABLE.list TD {
+    padding: 0 0 0 1em;
+}
+TABLE.list TH:first-child, TABLE.list TD:first-child {
+    padding-left: 0;
+}
+
+.sq {
+    font-family: 'Roboto Condensed', sans-serif;
+}
+.too-large {
+    max-width: 40em;
+    display: inline-block;
+    white-space: nowrap;
+    text-overflow: ellipsis ellipsis;
+    overflow: hidden;
+}
+.too-large:hover {
+    text-overflow: clip;
+    overflow: scroll;
 }
