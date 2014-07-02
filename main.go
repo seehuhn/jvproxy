@@ -429,14 +429,16 @@ func main() {
 
 	summaryTmpl = template.Must(template.New("summary.html").
 		Funcs(tmplFuncs).ParseFiles("tmpl/summary.html"))
+	statsMux.HandleFunc("/", store.summaryHandler)
 	logTmpl = template.Must(template.New("log.html").
 		Funcs(tmplFuncs).ParseFiles("tmpl/log.html"))
+	statsMux.HandleFunc("/log", store.logHandler)
 	storeTmpl = template.Must(template.New("store.html").
 		Funcs(tmplFuncs).ParseFiles("tmpl/store.html"))
-
-	statsMux.HandleFunc("/", store.summaryHandler)
-	statsMux.HandleFunc("/log", store.logHandler)
 	statsMux.HandleFunc("/store", store.storeHandler)
+	highlightsTmpl = template.Must(template.New("highlights.html").
+		Funcs(tmplFuncs).ParseFiles("tmpl/highlights.html"))
+	statsMux.HandleFunc("/highlights", store.highlightsHandler)
 	statsMux.Handle("/css/",
 		http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
 

@@ -136,3 +136,72 @@ func (s *Store) storeHandler(w http.ResponseWriter, r *http.Request) {
 			"rendering store index into template failed: %s", err.Error())
 	}
 }
+
+var highlightsTmpl *template.Template
+
+func (s *Store) highlightsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/highlights" {
+		http.NotFound(w, r)
+		return
+	}
+
+	candidates := []struct {
+		RequestURI string
+		Count      int
+		Size       int64
+	}{}
+	_, err := s.index.Select(&candidates,
+		`SELECT RequestURI, COUNT(*) AS Count, SUM(ContentLength) AS Size
+		 FROM log
+		 WHERE CacheResult != "HIT"
+		 GROUP BY RequestURI
+		 HAVING Count>1
+		 ORDER BY Size DESC
+		 LIMIT 10`)
+	if err != nil {
+		trace.T("jvproxy/stats", trace.PrioDebug,
+			"reading highlight candidates failed: %s", err.Error())
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	type candiData struct {
+		RequestURI string
+		Requests   []struct {
+			Method        string
+			StatusCode    int
+			ContentLength int64
+			CacheResult   string
+			Comment       string
+		}
+	}
+	type tmplData struct {
+		ListenAddr string
+		Entries    []candiData
+	}
+	data := tmplData{
+		ListenAddr: listenAddr,
+	}
+	for _, cand := range candidates {
+		cData := candiData{
+			RequestURI: cand.RequestURI,
+		}
+		_, err = s.index.Select(&cData.Requests,
+			`SELECT Method, StatusCode, ContentLength, CacheResult, Comment
+			 FROM log
+			 WHERE RequestURI=?
+			 ORDER BY RequestTimeNano DESC`, cand.RequestURI)
+		if err != nil {
+			trace.T("jvproxy/stats", trace.PrioDebug,
+				"reading highlight entries failed: %s", err.Error())
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		data.Entries = append(data.Entries, cData)
+	}
+	err = highlightsTmpl.Execute(w, data)
+	if err != nil {
+		trace.T("jvproxy/stats", trace.PrioDebug,
+			"rendering highlights into template failed: %s", err.Error())
+	}
+}
