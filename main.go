@@ -406,8 +406,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			entry.Vary = strings.Replace(
 				strings.Join(resp.Header["Vary"], ","), " ", "", -1)
 			if entry.Vary != "" {
-				entry.VaryHash = hashVaryInformation(resp.Header["Vary"],
-					resp.Header)
+				entry.VaryHash = hashVaryInformation(
+					strings.Split(entry.Vary, ","), r.Header)
 			}
 			entry.StatusCode = resp.StatusCode
 			entry.DownloadTimeNano = responseTime.UnixNano()

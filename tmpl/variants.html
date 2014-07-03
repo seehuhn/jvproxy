@@ -22,7 +22,7 @@
 <td class="sq">{{$entry.DownloadTimeNano | FormatTimeDeltaNano}}
 <td>{{$entry.LastUsedTime | FormatTimeDelta}}
 <td>{{$entry.ExpiryTime | FormatTimeDelta}}
-{{if $Vary}}<td>{{index $VaryHash $i}} {{.VaryHash | BytesToHex}}
+{{if $Vary}}<td title="{{.VaryHash | BytesToHex}}">{{index $VaryHash $i}}
 {{range index $Vary $i}}<td>{{.}}
 {{end}}{{end}}{{end}}</table>
 </body>

@@ -276,7 +276,7 @@ func (s *Store) variantsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	urlHash := sha256.Sum224([]byte(queryUrl))
 
-	entries := []indexEntry{}
+	entries := []*indexEntry{}
 	_, err := s.index.Select(&entries,
 		`SELECT * FROM [index]
 		 WHERE Hash=?
@@ -294,7 +294,7 @@ func (s *Store) variantsHandler(w http.ResponseWriter, r *http.Request) {
 		ListenAddr string
 		UrlPath    string
 		Headers    []string
-		Entries    []indexEntry
+		Entries    []*indexEntry
 		Vary       [][]template.HTML
 		VaryHash   []string
 	}
@@ -335,6 +335,7 @@ func (s *Store) variantsHandler(w http.ResponseWriter, r *http.Request) {
 			if entry.Vary != "" {
 				entryHeaders = strings.Split(entry.Vary, ",")
 			}
+
 			varyData := []template.HTML{}
 			for _, h := range data.Headers {
 				var x string
