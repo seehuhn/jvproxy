@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+{{template "head_frag.html" "variants"}}
+{{$Vary := .Vary}}
+<body>
+<h1>JvProxy &mdash; {{.ListenAddr}}</h1>
+<h2>Variants of {{.UrlPath}}</h2>
+<table class="list compact">
+<thead>
+<tr>
+<th>Code
+<th>Size
+<th>DownloadTime
+<th>Last Used
+<th>Expires{{range .Headers}}
+<th>{{.}}
+{{end}}<tbody>
+{{range $i, $entry := .Entries}}<tr>
+<td>{{$entry.StatusCode}}
+<td>{{$entry.ContentLength}}
+<td class="sq">{{$entry.DownloadTimeNano | FormatDateNano}}
+<td>{{$entry.LastUsedTime | FormatDate}}
+<td>{{$entry.ExpiryTime | FormatDate}}
+{{range index $Vary $i}}
+<td>{{.}}
+{{end}}
+{{end}}</table>
+</body>
+</html>

@@ -1,21 +1,17 @@
 <!DOCTYPE html>
 <html>
-<head>
-<link href='http://fonts.googleapis.com/css?family=Roboto+Condensed%7cRoboto:400,700' rel='stylesheet' type='text/css'>
-<title>summary - {{.ListenAddr}}</title>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-<link rel="stylesheet" href="/css/normalize.css" type="text/css">
-<link rel="stylesheet" href="/css/main.css" type="text/css">
-</head>
+{{template "head_frag.html" "summary"}}
 <body>
 <h1>JvProxy &mdash; {{.ListenAddr}}</h1>
 <h2>Summary</h2>
 <h3>Access Log</h3>
 <table class="list">
+<thead>
 <tr>
 <th>Cache Result
 <th>Total Count
 <th>Total Size
+<tbody>
 {{range .Log}}<tr>
 <td>{{.CacheResult}}
 <td>{{.TotalCount}}

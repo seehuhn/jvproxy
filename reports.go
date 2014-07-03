@@ -1,9 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
 	"github.com/seehuhn/trace"
 	"html/template"
 	"net/http"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -30,14 +34,25 @@ func formatDateNano(unixNano int64) template.HTML {
 	return template.HTML(s)
 }
 
-var summaryTmpl *template.Template
+var reportMux = http.NewServeMux()
+var reportTmpl = map[string]*template.Template{}
+
+func installReport(name string, handler http.HandlerFunc) {
+	tmpl := template.Must(template.New(name+".html").
+		Funcs(tmplFuncs).ParseFiles(filepath.Join("tmpl", name+".html"),
+		filepath.Join("tmpl", "head_frag.html")))
+	reportTmpl[name] = tmpl
+	url := "/" + name
+	reportMux.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != url {
+			http.NotFound(w, r)
+			return
+		}
+		handler(w, r)
+	})
+}
 
 func (s *Store) summaryHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-
 	var summaryData struct {
 		ListenAddr string
 		Log        []struct {
@@ -64,21 +79,14 @@ func (s *Store) summaryHandler(w http.ResponseWriter, r *http.Request) {
 	summaryData.StoreTotal, err = s.index.SelectInt(
 		"SELECT SUM(ContentLength) FROM `index`")
 
-	err = summaryTmpl.Execute(w, summaryData)
+	err = reportTmpl["summary"].Execute(w, summaryData)
 	if err != nil {
 		trace.T("jvproxy/stats", trace.PrioDebug,
 			"rendering summary data into template failed: %s", err.Error())
 	}
 }
 
-var logTmpl *template.Template
-
 func (s *Store) logHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/log" {
-		http.NotFound(w, r)
-		return
-	}
-
 	entries := []logEntry{}
 	_, err := s.index.Select(&entries,
 		"SELECT * FROM log ORDER BY RequestTimeNano DESC LIMIT 100")
@@ -97,21 +105,14 @@ func (s *Store) logHandler(w http.ResponseWriter, r *http.Request) {
 		ListenAddr: listenAddr,
 		Entries:    entries,
 	}
-	err = logTmpl.Execute(w, data)
+	err = reportTmpl["log"].Execute(w, data)
 	if err != nil {
 		trace.T("jvproxy/stats", trace.PrioDebug,
 			"rendering log entries into template failed: %s", err.Error())
 	}
 }
 
-var storeTmpl *template.Template
-
 func (s *Store) storeHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/store" {
-		http.NotFound(w, r)
-		return
-	}
-
 	entries := []indexEntry{}
 	_, err := s.index.Select(&entries,
 		"SELECT * FROM `index` ORDER BY DownloadTimeNano DESC LIMIT 100")
@@ -130,21 +131,14 @@ func (s *Store) storeHandler(w http.ResponseWriter, r *http.Request) {
 		ListenAddr: listenAddr,
 		Entries:    entries,
 	}
-	err = storeTmpl.Execute(w, data)
+	err = reportTmpl["store"].Execute(w, data)
 	if err != nil {
 		trace.T("jvproxy/stats", trace.PrioDebug,
 			"rendering store index into template failed: %s", err.Error())
 	}
 }
 
-var highlightsTmpl *template.Template
-
 func (s *Store) highlightsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/highlights" {
-		http.NotFound(w, r)
-		return
-	}
-
 	candidates := []struct {
 		RequestURI string
 		Count      int
@@ -199,9 +193,88 @@ func (s *Store) highlightsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		data.Entries = append(data.Entries, cData)
 	}
-	err = highlightsTmpl.Execute(w, data)
+	err = reportTmpl["highlights"].Execute(w, data)
 	if err != nil {
 		trace.T("jvproxy/stats", trace.PrioDebug,
 			"rendering highlights into template failed: %s", err.Error())
+	}
+}
+
+func stringInSlice(needle string, haystack []string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) variantsHandler(w http.ResponseWriter, r *http.Request) {
+	queryUrl := r.URL.Query().Get("url")
+	if queryUrl == "" {
+		http.Error(w, "missing query parameter 'url'", http.StatusNotFound)
+		return
+	}
+	urlHash := sha256.Sum224([]byte(queryUrl))
+
+	entries := []indexEntry{}
+	_, err := s.index.Select(&entries,
+		`SELECT * FROM [index]
+		 WHERE Hash=?
+		 ORDER BY DownloadTimeNano DESC
+		 LIMIT 100`,
+		urlHash[:])
+	if err != nil {
+		trace.T("jvproxy/stats", trace.PrioDebug,
+			"reading store index failed: %s", err.Error())
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	type tmplData struct {
+		ListenAddr string
+		UrlPath    string
+		Headers    []string
+		Entries    []indexEntry
+		Vary       [][]template.HTML
+	}
+	data := tmplData{
+		ListenAddr: listenAddr,
+		UrlPath:    queryUrl,
+		Entries:    entries,
+	}
+
+	varHeaderMap := map[string]bool{}
+	for _, entry := range entries {
+		entryHeaders := strings.Split(entry.Vary, ",")
+		for _, h := range entryHeaders {
+			varHeaderMap[h] = true
+		}
+	}
+	data.Headers = []string{}
+	for h, _ := range varHeaderMap {
+		data.Headers = append(data.Headers, h)
+	}
+	sort.Strings(data.Headers)
+
+	for _, entry := range entries {
+		entryHeaders := strings.Split(entry.Vary, ",")
+		varyData := []template.HTML{}
+		for _, h := range data.Headers {
+			var x string
+			if stringInSlice(h, entryHeaders) {
+				x = "must match"
+			} else {
+				x = "&mdash;"
+			}
+			varyData = append(varyData, template.HTML(x))
+		}
+		data.Vary = append(data.Vary, varyData)
+	}
+
+	err = reportTmpl["variants"].Execute(w, data)
+	if err != nil {
+		trace.T("jvproxy/stats", trace.PrioDebug,
+			"rendering store index into template failed: %s", err.Error())
 	}
 }

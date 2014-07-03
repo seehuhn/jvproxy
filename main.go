@@ -26,7 +26,6 @@ import (
 	"github.com/coopernurse/gorp"
 	_ "github.com/mattn/go-sqlite3" // we use the sqlite3 backend for gorp
 	"github.com/seehuhn/trace"
-	"html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -56,7 +55,7 @@ type logEntry struct {
 type indexEntry struct {
 	Id               int64
 	Hash             []byte // hash of the request url
-	Vary             string // colon-separated Vary fields of the response
+	Vary             string // comma-separated Vary fields of the response
 	VaryHash         []byte // hash of the response Vary information
 	StatusCode       int
 	ModTime          int64
@@ -143,7 +142,7 @@ func (s *Store) Lookup(urlHash []byte, header http.Header,
 			res = &entry
 			break
 		}
-		varyHeaders := strings.Split(entry.Vary, ":")
+		varyHeaders := strings.Split(entry.Vary, ",")
 		varyHash := hashVaryInformation(varyHeaders, header)
 		if bytes.Compare(entry.VaryHash, varyHash) == 0 {
 			res = &entry
@@ -195,7 +194,7 @@ func parseDate(dateStr string) time.Time {
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Host == "" || r.URL.Host == listenAddr {
-		statsMux.ServeHTTP(w, r)
+		reportMux.ServeHTTP(w, r)
 		return
 	}
 
@@ -385,7 +384,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			}
 			// TODO(voss): compare n to the server-provided Content-Length
 
-			entry.Vary = strings.Join(resp.Header["Vary"], ":")
+			entry.Vary = strings.Replace(
+				strings.Join(resp.Header["Vary"], ","), " ", "", -1)
 			if entry.Vary != "" {
 				entry.VaryHash = hashVaryInformation(resp.Header["Vary"],
 					resp.Header)
@@ -413,8 +413,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var statsMux = http.NewServeMux()
-
 func main() {
 	flag.Parse()
 
@@ -427,20 +425,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	summaryTmpl = template.Must(template.New("summary.html").
-		Funcs(tmplFuncs).ParseFiles("tmpl/summary.html"))
-	statsMux.HandleFunc("/", store.summaryHandler)
-	logTmpl = template.Must(template.New("log.html").
-		Funcs(tmplFuncs).ParseFiles("tmpl/log.html"))
-	statsMux.HandleFunc("/log", store.logHandler)
-	storeTmpl = template.Must(template.New("store.html").
-		Funcs(tmplFuncs).ParseFiles("tmpl/store.html"))
-	statsMux.HandleFunc("/store", store.storeHandler)
-	highlightsTmpl = template.Must(template.New("highlights.html").
-		Funcs(tmplFuncs).ParseFiles("tmpl/highlights.html"))
-	statsMux.HandleFunc("/highlights", store.highlightsHandler)
-	statsMux.Handle("/css/",
+	installReport("summary", store.summaryHandler)
+	installReport("log", store.logHandler)
+	installReport("store", store.storeHandler)
+	installReport("highlights", store.highlightsHandler)
+	installReport("variants", store.variantsHandler)
+	reportMux.Handle("/css/",
 		http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
+	reportMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+		} else {
+			http.Redirect(w, r, "/summary", http.StatusMovedPermanently)
+		}
+	})
 
 	go func() {
 		server := &http.Server{

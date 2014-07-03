@@ -1,16 +1,11 @@
 <!DOCTYPE html>
 <html>
-<head>
-<link href='http://fonts.googleapis.com/css?family=Roboto+Condensed%7cRoboto:400,700' rel='stylesheet' type='text/css'>
-<title>access log - {{.ListenAddr}}</title>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-<link rel="stylesheet" href="/css/normalize.css" type="text/css">
-<link rel="stylesheet" href="/css/main.css" type="text/css">
-</head>
+{{template "head_frag.html" "log"}}
 <body>
 <h1>JvProxy &mdash; {{.ListenAddr}}</h1>
 <h2>Access Log</h2>
 <table class="list compact">
+<thead>
 <tr>
 <th>Time
 <th>Cache
@@ -18,6 +13,7 @@
 <th>Size
 <th>Method
 <th>URI
+<tbody>
 {{range .Entries}}<tr>
 <td class="sq">{{.RequestTimeNano | FormatDateNano}}
 <td>{{.CacheResult}}
