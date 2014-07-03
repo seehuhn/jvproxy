@@ -360,7 +360,26 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			}
 			if err != nil {
 				trace.T("jvproxy/handler", trace.PrioDebug,
-					"error while storing headers in the cache: %s", err.Error())
+					"error while storing response headers in the cache: %s",
+					err.Error())
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			f, err = os.Create(fname + "c")
+			enc = gob.NewEncoder(f)
+			e2 = enc.Encode(r.Header)
+			if err == nil {
+				err = e2
+			}
+			e2 = f.Close()
+			if err == nil {
+				err = e2
+			}
+			if err != nil {
+				trace.T("jvproxy/handler", trace.PrioDebug,
+					"error while storing request headers in the cache: %s",
+					err.Error())
 				http.Error(w, err.Error(), 500)
 				return
 			}
@@ -439,16 +458,6 @@ func main() {
 			http.Redirect(w, r, "/summary", http.StatusMovedPermanently)
 		}
 	})
-
-	go func() {
-		server := &http.Server{
-			Addr:         listenAddrTLS,
-			Handler:      http.HandlerFunc(handler),
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 10 * time.Second,
-		}
-		server.ListenAndServeTLS("cert.pem", "key.pem")
-	}()
 
 	server := &http.Server{
 		Addr:         listenAddr,

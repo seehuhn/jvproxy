@@ -11,6 +11,11 @@ H1 {
     display: none;
 }
 
+A {
+    text-decoration: inherit;
+    font-weight: bold;
+}
+
 /* tables */
 TD, TH {
     text-align: left;
@@ -66,7 +71,8 @@ TABLE.list TH:first-child, TABLE.list TD:first-child {
     display: inline-block;
     white-space: nowrap;
     text-overflow: ellipsis ellipsis;
-    overflow: hidden;
+    overflow-x: hidden;
+    vertical-align: top;
 }
 .too-large:hover {
     text-overflow: clip;

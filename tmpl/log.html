@@ -20,7 +20,8 @@
 <td>{{.StatusCode}}
 <td>{{.ContentLength}}
 <td>{{.Method}}
-<td class="sq"><span class="too-large">{{.RequestURI}}</span>
+<td class="sq"><a href="/variants?url={{.RequestURI}}">V</a>
+<span class="too-large">{{.RequestURI}}</span>
 {{end}}</table>
 </body>
 </html>
