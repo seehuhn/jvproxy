@@ -324,7 +324,7 @@ func (s *Store) variantsHandler(w http.ResponseWriter, r *http.Request) {
 		shortHash := map[string]string{}
 		nextShortHash := 'A'
 		for _, entry := range entries {
-			fname := store.fileName(entry.Id)
+			fname := "xxx" // TODO(voss): store.fileName(entry.Id)
 			f, _ := os.Open(fname + "c")
 			dec := gob.NewDecoder(f)
 			header := http.Header{}
