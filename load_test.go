@@ -15,7 +15,7 @@ import (
 func TestParallelAccess(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 			fmt.Fprintln(w, "Hello, client")
 		}))
 	defer upstream.Close()
@@ -40,27 +40,33 @@ func TestParallelAccess(t *testing.T) {
 		},
 		DisableKeepAlives: true,
 	}
-	client := &http.Client{Transport: transport}
+	viaProxy := &http.Client{Transport: transport}
 
 	wait := &sync.WaitGroup{}
-	for i := 0; i < 10; i++ {
-		i := i
+	for i := 0; i < 1000; i++ {
 		wait.Add(1)
 		go func() {
-			resp, err := client.Get(upstream.URL)
+			defer wait.Done()
+
+			resp, err := viaProxy.Get(upstream.URL)
 			if err != nil {
 				t.Error(err)
 			}
+			if resp == nil {
+				return
+			}
+			if resp.StatusCode != 200 {
+				t.Error("received status code", resp.Status)
+			}
 			_, err = ioutil.ReadAll(resp.Body)
 			if err != nil {
+				fmt.Println(resp)
 				t.Error(err)
 			}
 			err = resp.Body.Close()
 			if err != nil {
 				t.Error(err)
 			}
-			fmt.Println(i)
-			wait.Done()
 		}()
 	}
 	wait.Wait()

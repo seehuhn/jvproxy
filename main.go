@@ -76,7 +76,7 @@ func NewStore(baseDir string) (*Store, error) {
 	err := s.setup()
 
 	db, err := sql.Open("sqlite3",
-		filepath.Join(baseDir, "index.db"))
+		"file:"+filepath.Join(baseDir, "index.db?cache=shared&mode=rwc"))
 	if err != nil {
 		return nil, err
 	}
