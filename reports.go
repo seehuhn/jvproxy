@@ -86,7 +86,7 @@ func bytesToHex(x []byte) template.HTML {
 	return template.HTML(hex.EncodeToString(x))
 }
 
-var reportMux = http.NewServeMux()
+var reportMux = http.NewServeMux() // TODO(voss): make this Cache-local
 var reportTmpl = map[string]*template.Template{}
 
 func installReport(name string, handler http.HandlerFunc) {

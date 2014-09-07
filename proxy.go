@@ -15,6 +15,7 @@ import (
 type Proxy struct {
 	store     *Store
 	reportMux *http.ServeMux
+	tokens    chan bool
 }
 
 func NewProxy(cacheDir string, reportMux *http.ServeMux) (*Proxy, error) {
@@ -23,9 +24,16 @@ func NewProxy(cacheDir string, reportMux *http.ServeMux) (*Proxy, error) {
 		return nil, err
 	}
 
+	maxParallel := 1000 // TODO(voss): do we need a limit here?  which one?
+	tokens := make(chan bool, maxParallel)
+	for i := 0; i < maxParallel; i++ {
+		tokens <- true
+	}
+
 	return &Proxy{
 		store:     store,
 		reportMux: reportMux,
+		tokens:    tokens,
 	}, nil
 }
 
@@ -42,10 +50,12 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Method:          r.Method,
 		RequestURI:      r.RequestURI,
 	}
+	token := <-proxy.tokens
 	defer func() {
 		log.HandlerDurationNano =
 			int64(time.Since(requestTime) / time.Nanosecond)
 		proxy.store.index.Insert(log)
+		proxy.tokens <- token
 	}()
 
 	via := r.Proto + " jvproxy"

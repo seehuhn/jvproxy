@@ -43,10 +43,18 @@ func TestParallelAccess(t *testing.T) {
 	viaProxy := &http.Client{Transport: transport}
 
 	wait := &sync.WaitGroup{}
+	maxParallel := 50
+	tokens := make(chan bool, maxParallel)
+	for i := 0; i < maxParallel; i++ {
+		tokens <- true
+	}
 	for i := 0; i < 1000; i++ {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
+
+			token := <-tokens
+			defer func() { tokens <- token }()
 
 			resp, err := viaProxy.Get(upstream.URL)
 			if err != nil {
