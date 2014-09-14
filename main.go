@@ -25,6 +25,7 @@ import (
 	"github.com/coopernurse/gorp"
 	_ "github.com/mattn/go-sqlite3" // we use the sqlite3 backend for gorp
 	"github.com/seehuhn/trace"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -69,18 +70,27 @@ type Store struct {
 	index   *gorp.DbMap
 }
 
+var SQLdebug = flag.Bool("sqldebug", false,
+	"print all SQL statements as they are executed")
+
 func NewStore(baseDir string) (*Store, error) {
 	s := &Store{
 		baseDir: baseDir,
 	}
 	err := s.setup()
 
-	db, err := sql.Open("sqlite3",
-		"file:"+filepath.Join(baseDir, "index.db?cache=shared&mode=rwc"))
+	openUrl :=
+		"file:" + filepath.Join(baseDir, "index.sqlite?cache=shared&mode=rwc")
+	trace.T("main/db", trace.PrioInfo, "opening sqlite3 database %q", openUrl)
+	db, err := sql.Open("sqlite3", openUrl)
 	if err != nil {
 		return nil, err
 	}
 	dbmap := &gorp.DbMap{Db: db, Dialect: gorp.SqliteDialect{}}
+	if *SQLdebug {
+		dbmap.TraceOn("[gorp]",
+			log.New(os.Stdout, "SQL:", log.Lmicroseconds))
+	}
 	dbmap.AddTableWithName(indexEntry{}, "index").SetKeys(true, "Id")
 	dbmap.AddTableWithName(logEntry{}, "log").SetKeys(true, "Id")
 	err = dbmap.CreateTablesIfNotExists()
@@ -127,7 +137,7 @@ func (s *Store) Lookup(urlHash []byte, header http.Header,
 	log *logEntry) (res *indexEntry, err error) {
 	entries := []indexEntry{}
 	_, err = s.index.Select(&entries,
-		"SELECT * FROM `index` WHERE Hash=? ORDER BY LENGTH(Vary)", urlHash)
+		"SELECT * FROM \"index\" WHERE Hash=? ORDER BY LENGTH(Vary)", urlHash)
 	if err != nil {
 		return
 	}
@@ -221,5 +231,6 @@ func main() {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
+	trace.T("main", trace.PrioInfo, "listening at %q", listenAddr)
 	server.ListenAndServe()
 }

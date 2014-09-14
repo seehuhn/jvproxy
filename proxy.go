@@ -66,8 +66,8 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var entry *indexEntry
 
+	canServeFromCache, canStoreInCache := canUseCache(r.Method, r.Header, log)
 	hash := sha256.Sum224([]byte(r.URL.String()))
-	canServeFromCache, canStoreInCache := canUseCache(r.Header, log)
 	if canServeFromCache {
 		entry, err = proxy.store.Lookup(hash[:], r.Header, log)
 		if err != nil {
@@ -183,15 +183,19 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if canStoreInCache {
 			// store an empty index entry to reserve a unique ID
-			entry := &indexEntry{}
-			err = proxy.store.index.Insert(entry)
+			res, err := proxy.store.index.Exec(
+				"INSERT INTO \"index\" DEFAULT VALUES")
 			if err != nil {
 				trace.T("jvproxy/handler", trace.PrioDebug,
 					"error while reserving index entry: %s", err.Error())
 				http.Error(w, err.Error(), 500)
 				return
 			}
-			fname := proxy.store.fileName(entry.Id)
+			rowId, err := res.LastInsertId()
+			if err != nil {
+				panic(err)
+			}
+			fname := proxy.store.fileName(rowId)
 
 			f, err := os.Create(fname + "h")
 			enc := gob.NewEncoder(f)
@@ -249,6 +253,9 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			// TODO(voss): compare n to the server-provided Content-Length
 
+			entry := &indexEntry{}
+			entry.Id = rowId
+			entry.Hash = hash[:]
 			entry.Vary = strings.Replace(
 				strings.Join(resp.Header["Vary"], ","), " ", "", -1)
 			if entry.Vary != "" {
@@ -256,20 +263,24 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					strings.Split(entry.Vary, ","), r.Header)
 			}
 			entry.StatusCode = resp.StatusCode
+			// ModTime
 			entry.DownloadTimeNano = responseTime.UnixNano()
 			entry.ExpiryTime = expires.Unix()
+			// LastUsedTime
+			// ETag
 			entry.ContentLength = n
-			entry.Hash = hash[:]
 			_, err = proxy.store.index.Update(entry)
 			if err != nil {
 				trace.T("jvproxy/handler", trace.PrioDebug,
 					"error while storing new entry in the DB: %s", err.Error())
 			}
+
 			log.CacheResult = "MISS,STORE"
 			log.ContentLength = n
 		} else {
 			w.WriteHeader(resp.StatusCode)
 			io.Copy(w, resp.Body)
+
 			log.CacheResult = "MISS,NOSTORE"
 		}
 

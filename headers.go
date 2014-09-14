@@ -177,7 +177,10 @@ func parseHeaders(headers []string) (map[string]string, error) {
 
 // first result: can use cache for response
 // second result: can store server response in cache
-func canUseCache(headers http.Header, log *logEntry) (bool, bool) {
+func canUseCache(method string, headers http.Header, log *logEntry) (bool, bool) {
+	if method != "GET" {
+		return false, false
+	}
 	parts, err := parseHeaders(headers["Pragma"])
 	if err != nil {
 		trace.T("jvproxy/handler", trace.PrioDebug,

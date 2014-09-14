@@ -67,12 +67,11 @@ func TestParallelAccess(t *testing.T) {
 				t.Error("received status code", resp.Status)
 			}
 			_, err = ioutil.ReadAll(resp.Body)
-			if err != nil {
-				fmt.Println(resp)
+			if err != nil && resp.StatusCode == 200 {
 				t.Error(err)
 			}
 			err = resp.Body.Close()
-			if err != nil {
+			if err != nil && resp.StatusCode == 200 {
 				t.Error(err)
 			}
 		}()

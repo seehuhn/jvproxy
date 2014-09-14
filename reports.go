@@ -129,7 +129,7 @@ func (s *Store) summaryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	summaryData.StoreTotal, err = s.index.SelectInt(
-		"SELECT SUM(ContentLength) FROM `index`")
+		"SELECT SUM(ContentLength) FROM \"index\"")
 
 	err = reportTmpl["summary"].Execute(w, summaryData)
 	if err != nil {
@@ -174,7 +174,7 @@ func (s *Store) logHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Store) storeHandler(w http.ResponseWriter, r *http.Request) {
 	entries := []indexEntry{}
 	_, err := s.index.Select(&entries,
-		"SELECT * FROM `index` ORDER BY DownloadTimeNano DESC LIMIT 100")
+		"SELECT * FROM \"index\" ORDER BY DownloadTimeNano DESC LIMIT 100")
 	if err != nil {
 		trace.T("jvproxy/stats", trace.PrioDebug,
 			"reading store index failed: %s", err.Error())
