@@ -34,3 +34,4 @@ REFERENCES
 - http://tools.ietf.org/html/rfc2616
 - http://tools.ietf.org/html/rfc7234
 - https://github.com/elazarl/goproxy
+- http://golang.org/src/pkg/net/http/httputil/reverseproxy.go?s=2534:2609#L87

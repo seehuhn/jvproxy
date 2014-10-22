@@ -21,6 +21,7 @@ import (
 	"github.com/seehuhn/trace"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -175,67 +176,81 @@ func parseHeaders(headers []string) (map[string]string, error) {
 	return res, err
 }
 
+func parseDate(dateStr string) time.Time {
+	var t time.Time
+	if dateStr != "" {
+		for _, format := range []string{time.RFC1123, time.RFC850, time.ANSIC} {
+			t, err := time.Parse(format, dateStr)
+			if err == nil {
+				return t
+			}
+		}
+	}
+	return t
+}
+
 // first result: can use cache for response
 // second result: can store server response in cache
-func canUseCache(method string, headers http.Header, log *logEntry) (bool, bool) {
+func canUseCache(method string, headers http.Header, log *LogEntry) (bool, bool) {
 	if method != "GET" {
 		return false, false
 	}
-	parts, err := parseHeaders(headers["Pragma"])
-	if err != nil {
-		trace.T("jvproxy/handler", trace.PrioDebug,
-			"cannot parse request Pragma directive: %s", err.Error())
-	}
+
+	parts, _ := parseHeaders(headers["Pragma"])
 	if _, ok := parts["no-cache"]; ok {
-		log.Comment += "Pragma:no-cache "
+		log.Comments = append(log.Comments, "req:P=NC")
 		return false, true
 	}
 
-	parts, err = parseHeaders(headers["Cache-Control"])
-	if err != nil {
-		trace.T("jvproxy/handler", trace.PrioDebug,
-			"cannot parse request Cache-Control directive: %s", err.Error())
-	}
+	parts, _ = parseHeaders(headers["Cache-Control"])
 	if _, ok := parts["no-cache"]; ok {
-		log.Comment += "CC:no-cache "
+		log.Comments = append(log.Comments, "req:CC=NC")
 		return false, true
 	}
 	if _, ok := parts["no-store"]; ok {
-		log.Comment += "CC:no-store "
+		log.Comments = append(log.Comments, "req:CC=NS")
 		return false, false
 	}
 
 	return true, true
 }
 
-func canStoreResponse() bool {
-	// parts, err := parseHeaders(headers["Pragma"])
-	// if err != nil {
-	//	trace.T("jvproxy/handler", trace.PrioDebug,
-	//		"cannot parse Pragma directive: %s", err.Error())
-	// }
-	// if _, ok := parts["no-cache"]; ok {
-	//	cacheable = false
-	// }
+func canStoreResponse(statusCode int, headers http.Header, log *LogEntry) bool {
+	switch statusCode {
+	case 200, 203, 300, 301, 410:
+		// pass
+	default:
+		return false
+	}
 
-	// parts, err = parseHeaders(headers["Cache-Control"])
-	// if err != nil {
-	//	trace.T("jvproxy/handler", trace.PrioDebug,
-	//		"cannot parse Cache-Control directive: %s", err.Error())
-	// }
-	// if _, ok := parts["public"]; ok {
-	//	cacheable = false
-	// }
-	// if _, ok := parts["public"]; ok {
-	//	cacheable = true
-	// }
-	// if _, ok := parts["no-cache"]; ok {
-	//	// TODO(voss): what to do if field names are specified?
-	//	cacheable = false
-	// }
-	// if _, ok := parts["no-store"]; ok {
-	//	cacheable = false
-	// }
+	parts, err := parseHeaders(headers["Pragma"])
+	if err != nil {
+		trace.T("jvproxy/handler", trace.PrioDebug,
+			"cannot parse Pragma directive: %s", err.Error())
+	}
+	if _, ok := parts["no-cache"]; ok {
+		log.Comments = append(log.Comments, "resp:P=NC")
+		return false
+	}
+
+	parts, err = parseHeaders(headers["Cache-Control"])
+	if err != nil {
+		trace.T("jvproxy/handler", trace.PrioDebug,
+			"cannot parse Cache-Control directive: %s", err.Error())
+	}
+	if _, ok := parts["private"]; ok {
+		log.Comments = append(log.Comments, "resp:CC=P")
+		return false
+	}
+	if _, ok := parts["no-cache"]; ok {
+		// TODO(voss): what to do if field names are specified?
+		log.Comments = append(log.Comments, "resp:CC=NC")
+		return false
+	}
+	if _, ok := parts["no-store"]; ok {
+		log.Comments = append(log.Comments, "resp:CC=NS")
+		return false
+	}
 
 	return true
 }
