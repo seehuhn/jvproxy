@@ -29,6 +29,10 @@ func NewProxy(name string, transport http.RoundTripper, cache Cache) *Proxy {
 	}
 }
 
+func (proxy *Proxy) Close() error {
+	return proxy.cache.Close()
+}
+
 func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	requestTime := time.Now()
 	log := &LogEntry{

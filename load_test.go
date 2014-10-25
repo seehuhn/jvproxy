@@ -26,7 +26,8 @@ func TestParallelAccess(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	proxy := NewProxy("test", nil)
+	cache := &NullCache{}
+	proxy := NewProxy("test", nil, cache)
 	if err != nil {
 		t.Fatal(err)
 	}
