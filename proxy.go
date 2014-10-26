@@ -11,10 +11,11 @@ import (
 )
 
 type Proxy struct {
-	name    string
-	upTrans http.RoundTripper
-	cache   Cache
-	logger  chan<- *LogEntry
+	Name     string
+	upTrans  http.RoundTripper
+	cache    Cache
+	logger   chan<- *LogEntry
+	AdminMux *http.ServeMux
 }
 
 func NewProxy(name string, transport http.RoundTripper, cache Cache) *Proxy {
@@ -22,10 +23,11 @@ func NewProxy(name string, transport http.RoundTripper, cache Cache) *Proxy {
 		transport = http.DefaultTransport
 	}
 	return &Proxy{
-		name:    name,
-		upTrans: transport,
-		cache:   cache,
-		logger:  NewLogger(),
+		Name:     name,
+		upTrans:  transport,
+		cache:    cache,
+		logger:   NewLogger(),
+		AdminMux: http.NewServeMux(),
 	}
 }
 
@@ -34,6 +36,11 @@ func (proxy *Proxy) Close() error {
 }
 
 func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.URL.Host == "" || req.URL.Host == proxy.Name {
+		proxy.AdminMux.ServeHTTP(w, req)
+		return
+	}
+
 	requestTime := time.Now()
 	log := &LogEntry{
 		RequestTimeNano: requestTime.UnixNano(),
@@ -183,7 +190,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request) *proxyResponse {
 }
 
 func (proxy *Proxy) setVia(header http.Header, proto string) {
-	via := proto + " " + proxy.name + " (jvproxy)"
+	via := proto + " " + proxy.Name + " (jvproxy)"
 	if strings.HasPrefix(via, "HTTP/") {
 		via = via[5:]
 	}

@@ -59,7 +59,7 @@ func (entry *nullEntry) Abort()    {}
 type ldbCache struct {
 	baseDir string
 	newDir  string
-	db      *leveldb.DB
+	DB      *leveldb.DB
 }
 
 func NewLevelDBCache(baseDir string) (Cache, error) {
@@ -97,11 +97,11 @@ func NewLevelDBCache(baseDir string) (Cache, error) {
 	return &ldbCache{
 		baseDir: baseDir,
 		newDir:  newDir,
-		db:      db,
+		DB:      db,
 	}, nil
 }
 
-func (cache *ldbCache) storeName(hash []byte) string {
+func (cache *ldbCache) getStoreName(hash []byte) string {
 	a := fmt.Sprintf("%02x", hash[0])
 	b := fmt.Sprintf("%x", hash[1:])
 	return filepath.Join(cache.baseDir, a, b)
@@ -113,9 +113,10 @@ type ldbMetaData struct {
 }
 
 func (cache *ldbCache) loadLdbMetaData(hash []byte) *ldbMetaData {
+	// TODO(voss): unpack directly into a proxyResponse?
 	res := &ldbMetaData{}
 
-	file, err := os.Open(cache.storeName(hash))
+	file, err := os.Open(cache.getStoreName(hash))
 	if err != nil {
 		return nil
 	}
@@ -124,7 +125,6 @@ func (cache *ldbCache) loadLdbMetaData(hash []byte) *ldbMetaData {
 	dec := gob.NewDecoder(file)
 	err = dec.Decode(res)
 	if err != nil {
-		// TODO(voss): mark the entry as invalid?
 		return nil
 	}
 
@@ -154,7 +154,7 @@ func (cache *ldbCache) storeLdbMetaData(m *ldbMetaData) []byte {
 
 	hash := make([]byte, hashLen)
 	sha3.ShakeSum128(hash, data)
-	storeName := cache.storeName(hash)
+	storeName := cache.getStoreName(hash)
 	os.Link(tmpName, storeName)
 	return hash
 }
@@ -208,14 +208,39 @@ func (cache *ldbCache) Retrieve(req *http.Request) *proxyResponse {
 	keyPfx := make([]byte, len(url)+1)
 	copy(keyPfx, url)
 	limits := util.BytesPrefix(keyPfx)
-	iter := cache.db.NewIterator(limits, nil)
-	fmt.Println("* " + url + ":")
+	iter := cache.DB.NewIterator(limits, nil)
+	defer func() {
+		iter.Release()
+		err := iter.Error()
+		if err != nil {
+			trace.T("jvproxy/cache", trace.PrioError,
+				"error while using levelDB iterator: %s", err.Error())
+		}
+	}()
 	for iter.Next() {
 		key := iter.Key()
 		_, fields, values := keyToUrl(key)
-		fmt.Println(".", fields)
-		_ = values
-		// value := iter.Value()
+		if !varyHeadersMatch(fields, values, req.Header) {
+			continue
+		}
+		// TODO(voss): check freshness/lifetime
+
+		hashes := iter.Value()
+		metaHash := hashes[:hashLen]
+		metaData := cache.loadLdbMetaData(metaHash)
+		if metaData == nil {
+			continue
+		}
+		contentHash := hashes[hashLen:]
+		body, err := os.Open(cache.getStoreName(contentHash))
+		if err != nil {
+			continue
+		}
+		return &proxyResponse{
+			StatusCode: metaData.StatusCode,
+			Header:     metaData.Header,
+			Body:       body,
+		}
 	}
 	return nil
 }
@@ -244,7 +269,7 @@ func (cache *ldbCache) StoreStart(url string, status int, header http.Header) Ca
 }
 
 func (cache *ldbCache) Close() error {
-	return cache.db.Close()
+	return cache.DB.Close()
 }
 
 type ldbEntry struct {
@@ -281,7 +306,7 @@ func (entry *ldbEntry) Complete() {
 	if err != nil {
 		panic(err)
 	}
-	storeName := entry.cache.storeName(contentHash)
+	storeName := entry.cache.getStoreName(contentHash)
 
 	err = os.Link(tmpName, storeName)
 	if err == nil {
@@ -289,7 +314,7 @@ func (entry *ldbEntry) Complete() {
 			"new cache entry %s", storeName)
 	}
 
-	entry.cache.db.Put(entry.key, hash, nil)
+	entry.cache.DB.Put(entry.key, hash, nil)
 }
 
 func (entry *ldbEntry) Abort() {

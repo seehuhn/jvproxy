@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+{{template "head_frag.html" "JVProxy Main Page"}}
+<body>
+<h1>JVProxy &mdash; {{.proxy.Name}}</h1>
+
+<p>This the is JVProxy caching web proxy at {{.proxy.Name}}.</p>
+
+<h2>Cache Overview</h2>
+
+<p>leveldb.stats:
+<pre>
+{{.cache.DB.GetProperty "leveldb.stats"}}
+</pre>
+
+<p>leveldb.blockpool:
+<pre>
+{{.cache.DB.GetProperty "leveldb.blockpool"}}
+</pre>
+
+</body>
+</html>

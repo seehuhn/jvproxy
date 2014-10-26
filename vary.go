@@ -25,9 +25,20 @@ func getVaryFields(header http.Header) []string {
 
 func getNormalizedHeaders(fields []string, header http.Header) []string {
 	res := []string{}
-	for _, key := range fields {
-		normalized := normalizeHeader(strings.Join(header[key], ","))
+	for _, name := range fields {
+		normalized := normalizeHeader(strings.Join(header[name], ","))
 		res = append(res, normalized)
 	}
 	return res
+}
+
+func varyHeadersMatch(fields, values []string, header http.Header) bool {
+	for i, name := range fields {
+		expected := values[i]
+		received := normalizeHeader(strings.Join(header[name], ","))
+		if received != expected {
+			return false
+		}
+	}
+	return true
 }

@@ -61,6 +61,8 @@ func main() {
 	}
 	proxy := NewProxy(*listenAddr, transport, cache)
 
+	installAdminHandlers(proxy.AdminMux, proxy, cache)
+
 	server := &http.Server{
 		Addr:         *listenAddr,
 		Handler:      proxy,

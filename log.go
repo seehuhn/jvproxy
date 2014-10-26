@@ -24,7 +24,7 @@ func NewLogger() chan<- *LogEntry {
 	res := make(chan *LogEntry, 64)
 	go func() {
 		for log := range res {
-			trace.T("jvproxy/log", trace.PrioVerbose, "%v", log)
+			trace.T("jvproxy/log", trace.PrioDebug, "%v", log)
 		}
 	}()
 	return res
