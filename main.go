@@ -55,7 +55,11 @@ func main() {
 		}
 	}
 
-	proxy := NewProxy(*listenAddr, transport, &NullCache{})
+	cache, err := NewLevelDBCache("cache")
+	if err != nil {
+		log.Fatalf("cannot create cache: %s", err.Error())
+	}
+	proxy := NewProxy(*listenAddr, transport, cache)
 
 	server := &http.Server{
 		Addr:         *listenAddr,

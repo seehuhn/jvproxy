@@ -75,8 +75,9 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var n int64
 	var err error
 	if canStoreInCache {
-		entry := proxy.cache.StoreStart(respData.StatusCode, respData.Header)
-		n, err = io.Copy(w, io.TeeReader(respData.Body, entry.Body()))
+		entry := proxy.cache.StoreStart(
+			req.URL.String(), respData.StatusCode, respData.Header)
+		n, err = io.Copy(w, entry.Reader(respData.Body))
 		if err != nil {
 			entry.Abort()
 		} else {
