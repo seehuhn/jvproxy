@@ -1,4 +1,4 @@
-package main
+package lib
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ type LogEntry struct {
 	ProxyFail                    bool
 	TestFail                     bool
 	Messages                     []string
-	totalTime, reqTime, respTime time.Duration
+	TotalTime, ReqTime, RespTime time.Duration
 }
 
 type Logger struct {
@@ -43,8 +43,8 @@ func (log *Logger) listen() {
 		} else if entry.ProxyFail {
 			fmt.Println("FAIL", entry.Name)
 		} else {
-			fmt.Println("PASS", entry.Name,
-				entry.totalTime, entry.reqTime, entry.respTime)
+			fmt.Println("....", entry.Name,
+				entry.TotalTime, entry.ReqTime, entry.RespTime)
 		}
 		for _, msg := range entry.Messages {
 			fmt.Println("  " + msg)

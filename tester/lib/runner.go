@@ -1,4 +1,4 @@
-package main
+package lib
 
 import (
 	"flag"
@@ -6,24 +6,14 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/seehuhn/jvproxy/tester/test"
 )
 
 var serveAddr = flag.String("addr", "localhost",
 	"address to use for the test server")
 var useIPv4 = flag.Bool("4", false, "use IPv4")
 var useIPv6 = flag.Bool("6", false, "use IPv6")
-
-type TestResult struct {
-	Pass     bool
-	Messages []string
-}
-
-type Test interface {
-	Name() string
-	Request() *http.Request
-	Respond(w http.ResponseWriter, req *http.Request)
-	Check(resp *http.Response, err error, serverCalled bool) *TestResult
-}
 
 type times struct {
 	start, stop time.Time
@@ -65,7 +55,13 @@ func (run *TestRunner) Close() error {
 	return run.listener.Close()
 }
 
-func (run *TestRunner) Run(t Test) {
+func (run *TestRunner) Run(t test.Test) {
+	// run twice to make cache effect visible
+	run.doRun(t)
+	run.doRun(t)
+}
+
+func (run *TestRunner) doRun(t test.Test) {
 	entry := &LogEntry{}
 	entry.Name = t.Name()
 
@@ -89,7 +85,7 @@ func (run *TestRunner) Run(t Test) {
 		sendTime := time.Now()
 		resp, err := run.transport.RoundTrip(req)
 		recvTime := time.Now()
-		entry.totalTime = recvTime.Sub(sendTime)
+		entry.TotalTime = recvTime.Sub(sendTime)
 
 		serverCalled := true
 		select {
@@ -97,8 +93,8 @@ func (run *TestRunner) Run(t Test) {
 			serverCalled = false
 		default:
 			serverTimes := <-timeResp
-			entry.reqTime = serverTimes.start.Sub(sendTime)
-			entry.respTime = recvTime.Sub(serverTimes.stop)
+			entry.ReqTime = serverTimes.start.Sub(sendTime)
+			entry.RespTime = recvTime.Sub(serverTimes.stop)
 		}
 		testResult := t.Check(resp, err, serverCalled)
 		entry.ProxyFail = !testResult.Pass

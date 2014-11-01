@@ -26,7 +26,8 @@ TODO
 - add more unit tests
 - optimise speed for concurrent access
 - add a mechanism for pruning the cache
-- try to handle HTTPS
+- try to handle tunneling of HTTPS
+- implement the http.RoundTripper interface for private caches
 
 REFERENCES
 ----------
