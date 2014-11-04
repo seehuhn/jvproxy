@@ -204,6 +204,7 @@ type decision struct {
 	canServeFromCache bool
 	canStore          bool
 	hasAuthorization  bool
+	mustRevalidate    bool
 	log               []string
 }
 
@@ -212,88 +213,105 @@ type decision struct {
 func (proxy *Proxy) getCacheInfo(req *http.Request) *decision {
 	res := &decision{}
 
-	if req.Method != "GET" {
-		res.log = append(res.log, "unknown request method \""+req.Method+"\"")
-		return res
+	headers := req.Header
+	cc, _ := parseHeaders(headers["Cache-Control"])
+
+	// RFC 7234, section 3
+	res.canStore = true
+
+	if req.Method != "GET" && req.Method != "HEAD" {
+		// TODO(voss): handle POST?
+		res.canStore = false
+		res.log = append(res.log, "req:method="+req.Method)
 	}
 
-	headers := req.Header
+	if _, hasNoStore := cc["no-store"]; hasNoStore {
+		res.canStore = false
+		res.log = append(res.log, "req:CC=NS")
+	}
 
 	if proxy.shared && len(headers["Authorization"]) > 0 {
 		res.hasAuthorization = true
+		// decision defered to `proxy.updateCacheInfo()`
 	}
 
-	parts, _ := parseHeaders(headers["Cache-Control"])
-	if _, ok := parts["no-cache"]; ok {
-		res.canStore = true
-		res.log = append(res.log, "req:CC=NC")
-		return res
-	}
-	if _, ok := parts["no-store"]; ok {
-		res.log = append(res.log, "req:CC=NS")
-		return res
-	}
-
-	parts, _ = parseHeaders(headers["Pragma"])
-	if _, ok := parts["no-cache"]; ok {
-		res.canStore = true
-		res.log = append(res.log, "req:P=NC")
-		return res
-	}
-
+	// RFC 7234, section 4
 	res.canServeFromCache = true
-	res.canStore = true
+
+	pragma, _ := parseHeaders(headers["Pragma"])
+	if _, hasNoCache := pragma["no-cache"]; hasNoCache {
+		res.mustRevalidate = true
+		res.log = append(res.log, "req:P=NC")
+	}
+
+	if _, hasNoCache := cc["no-cache"]; hasNoCache {
+		res.mustRevalidate = true
+		res.log = append(res.log, "req:CC=NC")
+	}
+
 	return res
 }
 
 func (proxy *Proxy) updateCacheInfo(resp *proxyResponse, res *decision) {
+	// At this point we already have obtained a new response from the
+	// server: only the .canStore field is still interesting.
+
+	// RFC 7234, section 3
 	if !res.canStore {
 		return
 	}
 
+	headers := resp.Header
+	cc, _ := parseHeaders(headers["Cache-Control"])
+
 	switch resp.StatusCode {
-	case 200, 203, 300, 301, 410:
+	case 200, 203, 204, 300, 301, 404, 405, 410, 414, 501:
+		// status codes understood by the proxy
+
 		// pass
 	default:
+		// This currently includes 206 (partial content)
 		res.canStore = false
 		res.log = append(res.log, "resp:code="+strconv.Itoa(resp.StatusCode))
-		return
 	}
 
-	headers := resp.Header
+	if _, hasNoStore := cc["no-store"]; hasNoStore {
+		res.canStore = false
+		res.log = append(res.log, "resp:CC=NS")
+	}
 
-	parts, _ := parseHeaders(headers["Cache-Control"])
+	if _, hasPrivate := cc["private"]; proxy.shared && hasPrivate {
+		res.canStore = false
+		res.log = append(res.log, "resp:CC=P")
+	}
+
 	if res.hasAuthorization {
-		_, ok1 := parts["must-revalidate"]
-		_, ok2 := parts["public"]
-		_, ok3 := parts["s-maxage"]
+		_, ok1 := cc["must-revalidate"]
+		_, ok2 := cc["public"]
+		_, ok3 := cc["s-maxage"]
 		if !(ok1 || ok2 || ok3) {
 			res.canStore = false
 			res.log = append(res.log, "resp:Auth")
-			return
 		}
 	}
-	if _, ok := parts["private"]; ok {
-		res.canStore = false
-		res.log = append(res.log, "resp:CC=P")
-		return
-	}
-	if _, ok := parts["no-cache"]; ok {
-		// TODO(voss): what to do if field names are specified?
-		res.canStore = false
-		res.log = append(res.log, "resp:CC=NC")
-		return
-	}
-	if _, ok := parts["no-store"]; ok {
-		res.canStore = false
-		res.log = append(res.log, "resp:CC=NS")
-		return
-	}
 
-	parts, _ = parseHeaders(headers["Pragma"])
-	if _, ok := parts["no-cache"]; ok {
-		res.canStore = false
-		res.log = append(res.log, "resp:P=NC")
-		return
+	cacheable := false
+	if len(headers["Expires"]) > 0 {
+		cacheable = true
 	}
+	if _, hasMaxAge := cc["max-age"]; hasMaxAge {
+		cacheable = true
+	}
+	if _, hasSMaxage := cc["s-maxage"]; proxy.shared && hasSMaxage {
+		cacheable = true
+	}
+	switch resp.StatusCode {
+	case 200, 203, 204, 206, 300, 301, 404, 405, 410, 414, 501:
+		// status codes defined as cacheable by default
+		cacheable = true
+	}
+	if _, hasPublic := cc["public"]; hasPublic {
+		cacheable = true
+	}
+	res.canStore = res.canStore && cacheable
 }

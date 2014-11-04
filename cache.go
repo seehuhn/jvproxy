@@ -34,28 +34,6 @@ type CacheEntry interface {
 	Abort()
 }
 
-type NullCache struct{}
-
-func (cache *NullCache) Retrieve(*http.Request) *proxyResponse {
-	return nil
-}
-
-func (cache *NullCache) StoreStart(string, int, http.Header) CacheEntry {
-	return &nullEntry{}
-}
-
-func (cache *NullCache) Close() error {
-	return nil
-}
-
-type nullEntry struct{}
-
-func (entry *nullEntry) Reader(r io.Reader) io.Reader {
-	return r
-}
-func (entry *nullEntry) Complete() {}
-func (entry *nullEntry) Abort()    {}
-
 type ldbCache struct {
 	baseDir string
 	newDir  string
@@ -326,3 +304,25 @@ func (entry *ldbEntry) Abort() {
 			"cannot remove temporary file %q: %s", tmpName, err.Error())
 	}
 }
+
+type NullCache struct{}
+
+func (cache *NullCache) Retrieve(*http.Request) *proxyResponse {
+	return nil
+}
+
+func (cache *NullCache) StoreStart(string, int, http.Header) CacheEntry {
+	return &nullEntry{}
+}
+
+func (cache *NullCache) Close() error {
+	return nil
+}
+
+type nullEntry struct{}
+
+func (entry *nullEntry) Reader(r io.Reader) io.Reader {
+	return r
+}
+func (entry *nullEntry) Complete() {}
+func (entry *nullEntry) Abort()    {}
