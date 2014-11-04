@@ -18,21 +18,10 @@ configurable, it always starts a web proxy listening on
 ``localhost:8080``.  For use by the cache, the proxy creates a new
 directory ``cache/`` inside the current directory.
 
-TODO
-----
-
-- implement more of RFC 2616 and RFC 7234
-- restructure and modularize the code
-- add more unit tests
-- optimise speed for concurrent access
-- add a mechanism for pruning the cache
-- try to handle tunneling of HTTPS
-- implement the http.RoundTripper interface for private caches
-
 REFERENCES
 ----------
 
-- http://tools.ietf.org/html/rfc2616
 - http://tools.ietf.org/html/rfc7234
-- https://github.com/elazarl/goproxy
+- http://tools.ietf.org/html/rfc2616
 - http://golang.org/src/pkg/net/http/httputil/reverseproxy.go?s=2534:2609#L87
+- https://github.com/elazarl/goproxy

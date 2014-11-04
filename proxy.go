@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,9 +17,10 @@ type Proxy struct {
 	cache    Cache
 	logger   chan<- *LogEntry
 	AdminMux *http.ServeMux
+	shared   bool
 }
 
-func NewProxy(name string, transport http.RoundTripper, cache Cache) *Proxy {
+func NewProxy(name string, transport http.RoundTripper, cache Cache, shared bool) *Proxy {
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
@@ -28,6 +30,7 @@ func NewProxy(name string, transport http.RoundTripper, cache Cache) *Proxy {
 		cache:    cache,
 		logger:   NewLogger(),
 		AdminMux: http.NewServeMux(),
+		shared:   shared,
 	}
 }
 
@@ -54,34 +57,31 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		proxy.logger <- log
 	}()
 
-	canServeFromCache, canStoreInCache := canUseCache(
-		req.Method, req.Header, log)
+	cacheInfo := proxy.getCacheInfo(req)
 
 	var respData *proxyResponse
 
-	if canServeFromCache {
+	if cacheInfo.canServeFromCache {
 		respData = proxy.cache.Retrieve(req)
 	}
 	if respData != nil {
 		log.CacheResult = "HIT"
-		canStoreInCache = false
+		cacheInfo.canStore = false
 	} else {
 		respData = proxy.requestFromUpstream(req)
 	}
 	log.ResponseReceivedNano = int64(time.Since(requestTime) / time.Nanosecond)
 	log.StatusCode = respData.StatusCode
 
-	if canStoreInCache {
-		canStoreInCache = canStoreResponse(
-			respData.StatusCode, respData.Header, log)
-	}
+	proxy.updateCacheInfo(respData, cacheInfo)
+	log.Comments = append(log.Comments, cacheInfo.log...)
 
 	h := w.Header()
 	copyHeader(h, respData.Header)
 	w.WriteHeader(respData.StatusCode)
 	var n int64
 	var err error
-	if canStoreInCache {
+	if cacheInfo.canStore {
 		entry := proxy.cache.StoreStart(
 			req.URL.String(), respData.StatusCode, respData.Header)
 		n, err = io.Copy(w, entry.Reader(respData.Body))
@@ -200,10 +200,100 @@ func (proxy *Proxy) setVia(header http.Header, proto string) {
 	header.Set("Via", via)
 }
 
-func copyHeader(dst, src http.Header) {
-	for k, vv := range src {
-		for _, v := range vv {
-			dst.Add(k, v)
+type decision struct {
+	canServeFromCache bool
+	canStore          bool
+	hasAuthorization  bool
+	log               []string
+}
+
+// first result: can use cache for response
+// second result: can store server response in cache
+func (proxy *Proxy) getCacheInfo(req *http.Request) *decision {
+	res := &decision{}
+
+	if req.Method != "GET" {
+		res.log = append(res.log, "unknown request method \""+req.Method+"\"")
+		return res
+	}
+
+	headers := req.Header
+
+	if proxy.shared && len(headers["Authorization"]) > 0 {
+		res.hasAuthorization = true
+	}
+
+	parts, _ := parseHeaders(headers["Cache-Control"])
+	if _, ok := parts["no-cache"]; ok {
+		res.canStore = true
+		res.log = append(res.log, "req:CC=NC")
+		return res
+	}
+	if _, ok := parts["no-store"]; ok {
+		res.log = append(res.log, "req:CC=NS")
+		return res
+	}
+
+	parts, _ = parseHeaders(headers["Pragma"])
+	if _, ok := parts["no-cache"]; ok {
+		res.canStore = true
+		res.log = append(res.log, "req:P=NC")
+		return res
+	}
+
+	res.canServeFromCache = true
+	res.canStore = true
+	return res
+}
+
+func (proxy *Proxy) updateCacheInfo(resp *proxyResponse, res *decision) {
+	if !res.canStore {
+		return
+	}
+
+	switch resp.StatusCode {
+	case 200, 203, 300, 301, 410:
+		// pass
+	default:
+		res.canStore = false
+		res.log = append(res.log, "resp:code="+strconv.Itoa(resp.StatusCode))
+		return
+	}
+
+	headers := resp.Header
+
+	parts, _ := parseHeaders(headers["Cache-Control"])
+	if res.hasAuthorization {
+		_, ok1 := parts["must-revalidate"]
+		_, ok2 := parts["public"]
+		_, ok3 := parts["s-maxage"]
+		if !(ok1 || ok2 || ok3) {
+			res.canStore = false
+			res.log = append(res.log, "resp:Auth")
+			return
 		}
+	}
+	if _, ok := parts["private"]; ok {
+		res.canStore = false
+		res.log = append(res.log, "resp:CC=P")
+		return
+	}
+	if _, ok := parts["no-cache"]; ok {
+		// TODO(voss): what to do if field names are specified?
+		res.canStore = false
+		res.log = append(res.log, "resp:CC=NC")
+		return
+	}
+	if _, ok := parts["no-store"]; ok {
+		res.canStore = false
+		res.log = append(res.log, "resp:CC=NS")
+		return
+	}
+
+	parts, _ = parseHeaders(headers["Pragma"])
+	if _, ok := parts["no-cache"]; ok {
+		res.canStore = false
+		res.log = append(res.log, "resp:P=NC")
+		return
 	}
 }

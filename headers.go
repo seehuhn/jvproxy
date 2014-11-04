@@ -18,7 +18,6 @@ package main
 
 import (
 	"errors"
-	"github.com/seehuhn/trace"
 	"net/http"
 	"strings"
 	"time"
@@ -189,68 +188,10 @@ func parseDate(dateStr string) time.Time {
 	return t
 }
 
-// first result: can use cache for response
-// second result: can store server response in cache
-func canUseCache(method string, headers http.Header, log *LogEntry) (bool, bool) {
-	if method != "GET" {
-		return false, false
+func copyHeader(dst, src http.Header) {
+	for k, vv := range src {
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
 	}
-
-	parts, _ := parseHeaders(headers["Pragma"])
-	if _, ok := parts["no-cache"]; ok {
-		log.Comments = append(log.Comments, "req:P=NC")
-		return false, true
-	}
-
-	parts, _ = parseHeaders(headers["Cache-Control"])
-	if _, ok := parts["no-cache"]; ok {
-		log.Comments = append(log.Comments, "req:CC=NC")
-		return false, true
-	}
-	if _, ok := parts["no-store"]; ok {
-		log.Comments = append(log.Comments, "req:CC=NS")
-		return false, false
-	}
-
-	return true, true
-}
-
-func canStoreResponse(statusCode int, headers http.Header, log *LogEntry) bool {
-	switch statusCode {
-	case 200, 203, 300, 301, 410:
-		// pass
-	default:
-		return false
-	}
-
-	parts, err := parseHeaders(headers["Pragma"])
-	if err != nil {
-		trace.T("jvproxy/handler", trace.PrioDebug,
-			"cannot parse Pragma directive: %s", err.Error())
-	}
-	if _, ok := parts["no-cache"]; ok {
-		log.Comments = append(log.Comments, "resp:P=NC")
-		return false
-	}
-
-	parts, err = parseHeaders(headers["Cache-Control"])
-	if err != nil {
-		trace.T("jvproxy/handler", trace.PrioDebug,
-			"cannot parse Cache-Control directive: %s", err.Error())
-	}
-	if _, ok := parts["private"]; ok {
-		log.Comments = append(log.Comments, "resp:CC=P")
-		return false
-	}
-	if _, ok := parts["no-cache"]; ok {
-		// TODO(voss): what to do if field names are specified?
-		log.Comments = append(log.Comments, "resp:CC=NC")
-		return false
-	}
-	if _, ok := parts["no-store"]; ok {
-		log.Comments = append(log.Comments, "resp:CC=NS")
-		return false
-	}
-
-	return true
 }

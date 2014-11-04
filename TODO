@@ -1,2 +1,14 @@
+TODO
+----
+
+- implement more of RFC 2616 and RFC 7234
+- restructure and modularize the code
+- add more unit tests
+- optimise speed for concurrent access
+- add a mechanism for pruning the cache
+- try to handle tunneling of HTTPS
+- implement the http.RoundTripper interface for private caches
 - the program seems to leak file descriptors?
   "http: Accept error: accept tcp 127.0.0.1:8080: too many open files; retrying in 40ms"
+- does the following load tester help with testing:
+  https://github.com/tsenart/vegeta

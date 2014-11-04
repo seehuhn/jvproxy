@@ -59,7 +59,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("cannot create cache: %s", err.Error())
 	}
-	proxy := NewProxy(*listenAddr, transport, cache)
+	proxy := NewProxy(*listenAddr, transport, cache, true)
 
 	installAdminHandlers(proxy.AdminMux, proxy, cache)
 
