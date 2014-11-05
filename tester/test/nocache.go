@@ -74,6 +74,10 @@ func (t *NoCache) Check(resp *http.Response, err error, up bool) *Result {
 		res.Messages = append(res.Messages,
 			"error while reading headers: "+err.Error())
 	}
+	if resp == nil {
+		return res
+	}
+
 	data, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
