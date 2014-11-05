@@ -6,6 +6,7 @@ import (
 	"net/http"
 )
 
+// Verify that a server response is not cached by the proxy.
 type NoCache struct {
 	RFC         string
 	method      string
@@ -30,8 +31,12 @@ func NewNoCache(RFC string, m string, h1, h2 http.Header, c int) *NoCache {
 	}
 }
 
-func (t *NoCache) Name() string {
-	return fmt.Sprintf("NoCache (%s)", t.RFC)
+func (t *NoCache) Info() *Info {
+	return &Info{
+		Name:   "NoCache",
+		RFC:    t.RFC,
+		Repeat: 2,
+	}
 }
 
 func (t *NoCache) Request() *http.Request {
@@ -46,7 +51,7 @@ func (t *NoCache) Request() *http.Request {
 
 func (t *NoCache) Respond(w http.ResponseWriter, req *http.Request) {
 	t.count += 1
-	body := fmt.Sprintf("%s\n%d\n", t.RFC, t.count)
+	body := UniquePath(64)
 	t.body = append(t.body, body)
 
 	h := w.Header()

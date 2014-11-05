@@ -6,24 +6,31 @@ import (
 	"net/http"
 )
 
+// Simple tests whether the proxy passes through simple GET requests
+// to the server.
 type Simple struct {
 	msg  string
 	path string
 }
 
-func NewSimple(msg string) *Simple {
+func NewSimple() *Simple {
 	return &Simple{
-		msg:  msg,
+		msg:  UniquePath(128),
 		path: UniquePath(32),
 	}
 }
 
-func (t *Simple) Name() string {
-	return fmt.Sprintf("Simple (%s)", t.msg)
+func (t *Simple) Info() *Info {
+	return &Info{
+		Name:   "Simple",
+		Repeat: 1,
+	}
 }
 
 func (t *Simple) Request() *http.Request {
 	req, _ := http.NewRequest("GET", "/"+t.path, nil)
+	req.Header.Add("Pragma", "no-cache")
+	req.Header.Add("Cache-Control", "no-cache,no-store,no-transform")
 	return req
 }
 
@@ -41,12 +48,16 @@ func (t *Simple) Check(resp *http.Response, err error, up bool) *Result {
 		res.Messages = append(res.Messages,
 			"error while reading headers: "+err.Error())
 	}
-	data, err := ioutil.ReadAll(resp.Body)
+	if resp == nil {
+		return res
+	}
+
+	data, e2 := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
-	if err != nil {
+	if err == nil && e2 != nil {
 		res.Pass = false
 		res.Messages = append(res.Messages,
-			"error while reading body: "+err.Error())
+			"error while reading body: "+e2.Error())
 	}
 	if string(data) != t.msg {
 		res.Pass = false

@@ -8,16 +8,22 @@ import (
 	"sync"
 )
 
-type Result struct {
-	Pass     bool
-	Messages []string
-}
-
 type Test interface {
-	Name() string
+	Info() *Info
 	Request() *http.Request
 	Respond(w http.ResponseWriter, req *http.Request)
 	Check(resp *http.Response, err error, serverCalled bool) *Result
+}
+
+type Info struct {
+	Name   string
+	RFC    string
+	Repeat int
+}
+
+type Result struct {
+	Pass     bool
+	Messages []string
 }
 
 var testerSecret []byte

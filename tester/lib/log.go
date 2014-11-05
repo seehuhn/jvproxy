@@ -43,8 +43,10 @@ func (log *Logger) listen() {
 		} else if entry.ProxyFail {
 			fmt.Println("FAIL", entry.Name)
 		} else {
-			fmt.Println("....", entry.Name,
-				entry.TotalTime, entry.ReqTime, entry.RespTime)
+			q := float64(time.Millisecond)
+			fmt.Printf(".... %-32s %8.2fms %8.2fms %8.2fms\n", entry.Name,
+				float64(entry.TotalTime)/q, float64(entry.ReqTime)/q,
+				float64(entry.RespTime)/q)
 		}
 		for _, msg := range entry.Messages {
 			fmt.Println("  " + msg)

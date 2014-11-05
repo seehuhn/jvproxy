@@ -13,7 +13,7 @@ import (
 
 type Proxy struct {
 	Name     string
-	upTrans  http.RoundTripper
+	upstream http.RoundTripper
 	cache    Cache
 	logger   chan<- *LogEntry
 	AdminMux *http.ServeMux
@@ -26,7 +26,7 @@ func NewProxy(name string, transport http.RoundTripper, cache Cache, shared bool
 	}
 	return &Proxy{
 		Name:     name,
-		upTrans:  transport,
+		upstream: transport,
 		cache:    cache,
 		logger:   NewLogger(),
 		AdminMux: http.NewServeMux(),
@@ -163,7 +163,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request) *proxyResponse {
 
 	proxy.setVia(upReq.Header, req.Proto)
 
-	upResp, err := proxy.upTrans.RoundTrip(upReq)
+	upResp, err := proxy.upstream.RoundTrip(upReq)
 	if err != nil {
 		trace.T("jvproxy/handler", trace.PrioDebug,
 			"upstream server request failed: %s", err.Error())

@@ -56,21 +56,24 @@ func (run *TestRunner) Close() error {
 }
 
 func (run *TestRunner) Run(t test.Test) {
-	// run twice to make cache effect visible
-	run.doRun(t)
-	run.doRun(t)
+	testInfo := t.Info()
+	entry := &LogEntry{}
+	entry.Name = testInfo.Name
+	if testInfo.RFC != "" {
+		entry.Name += " [RFC" + testInfo.RFC + "]"
+	}
+	for i := 0; i < testInfo.Repeat && !entry.TestFail && !entry.ProxyFail; i++ {
+		run.doRun(t, entry)
+	}
+	run.log <- entry
 }
 
-func (run *TestRunner) doRun(t test.Test) {
-	entry := &LogEntry{}
-	entry.Name = t.Name()
-
+func (run *TestRunner) doRun(t test.Test, entry *LogEntry) {
 	req := t.Request()
 	if req == nil {
 		entry.Messages = append(entry.Messages,
 			"failed to construct request")
 		entry.TestFail = true
-		run.log <- entry
 	} else {
 		req.URL.Scheme = "http"
 		req.URL.Host = run.addr
@@ -100,7 +103,6 @@ func (run *TestRunner) doRun(t test.Test) {
 		entry.ProxyFail = !testResult.Pass
 		entry.Messages = append(entry.Messages, testResult.Messages...)
 	}
-	run.log <- entry
 }
 
 func (s *TestRunner) serveHTTP(w http.ResponseWriter, req *http.Request) {
