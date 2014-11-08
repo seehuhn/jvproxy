@@ -55,5 +55,12 @@ func main() {
 		testRunner.Run(test.NewNoCache(name, "GET", nil, nil, code))
 	}
 
+	testRunner.Run(test.NewAuthTest())
+
+	h = http.Header{}
+	h.Add("Cache-Control", "public")
+	h.Add("Expires", "Thu, 01 Dec 1994 16:00:00 GMT")
+	testRunner.Run(test.NewNoCache("7234-4.0f1", "GET", nil, h, 200))
+
 	log.Close()
 }

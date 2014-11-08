@@ -16,7 +16,7 @@ type Simple struct {
 func NewSimple() *Simple {
 	return &Simple{
 		msg:  UniquePath(128),
-		path: UniquePath(32),
+		path: "/" + UniquePath(32),
 	}
 }
 
@@ -28,9 +28,7 @@ func (t *Simple) Info() *Info {
 }
 
 func (t *Simple) Request() *http.Request {
-	req, _ := http.NewRequest("GET", "/"+t.path, nil)
-	req.Header.Add("Pragma", "no-cache")
-	req.Header.Add("Cache-Control", "no-cache,no-store,no-transform")
+	req, _ := http.NewRequest("GET", t.path, nil)
 	return req
 }
 
