@@ -57,7 +57,7 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		proxy.logger <- log
 	}()
 
-	cacheInfo := proxy.getCacheInfo(req)
+	cacheInfo := proxy.getCacheability(req)
 
 	var respData *proxyResponse
 
@@ -73,7 +73,7 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	log.ResponseReceivedNano = int64(time.Since(requestTime) / time.Nanosecond)
 	log.StatusCode = respData.StatusCode
 
-	proxy.updateCacheInfo(respData, cacheInfo)
+	proxy.updateCacheability(respData, cacheInfo)
 	log.Comments = append(log.Comments, cacheInfo.log...)
 
 	h := w.Header()
@@ -163,7 +163,9 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request) *proxyResponse {
 
 	proxy.setVia(upReq.Header, req.Proto)
 
+	// requestTime := time.Now()
 	upResp, err := proxy.upstream.RoundTrip(upReq)
+	responseTime := time.Now()
 	if err != nil {
 		trace.T("jvproxy/handler", trace.PrioDebug,
 			"upstream server request failed: %s", err.Error())
@@ -177,10 +179,16 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request) *proxyResponse {
 		}
 	}
 
+	// Fix upstream-provided headers as required for forwarding and
+	// storage.
 	for _, name := range perHopHeaders {
 		upResp.Header.Del(name)
 	}
 	proxy.setVia(upResp.Header, upResp.Proto)
+	if len(upResp.Header["Date"]) == 0 {
+		upResp.Header.Set("Date",
+			responseTime.Format(time.RFC1123))
+	}
 
 	return &proxyResponse{
 		StatusCode: upResp.StatusCode,
@@ -210,7 +218,7 @@ type decision struct {
 
 // first result: can use cache for response
 // second result: can store server response in cache
-func (proxy *Proxy) getCacheInfo(req *http.Request) *decision {
+func (proxy *Proxy) getCacheability(req *http.Request) *decision {
 	res := &decision{}
 
 	headers := req.Header
@@ -232,7 +240,7 @@ func (proxy *Proxy) getCacheInfo(req *http.Request) *decision {
 
 	if proxy.shared && len(headers["Authorization"]) > 0 {
 		res.hasAuthorization = true
-		// decision defered to `proxy.updateCacheInfo()`
+		// decision defered to `proxy.updateCacheability()`
 	}
 
 	// RFC 7234, section 4
@@ -252,7 +260,7 @@ func (proxy *Proxy) getCacheInfo(req *http.Request) *decision {
 	return res
 }
 
-func (proxy *Proxy) updateCacheInfo(resp *proxyResponse, res *decision) {
+func (proxy *Proxy) updateCacheability(resp *proxyResponse, res *decision) {
 	// At this point we already have obtained a new response from the
 	// server: only the .canStore field is still interesting.
 
