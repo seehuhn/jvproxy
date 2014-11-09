@@ -2,12 +2,12 @@ package lib
 
 import (
 	"flag"
+	"github.com/seehuhn/jvproxy/tester/test"
+	"github.com/seehuhn/trace"
 	"net"
 	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/seehuhn/jvproxy/tester/test"
 )
 
 var serveAddr = flag.String("addr", "localhost",
@@ -28,26 +28,38 @@ type serverHint struct {
 type TestRunner struct {
 	log chan<- *LogEntry
 
-	listener  net.Listener
-	addr      string
-	handler   chan *serverHint
+	listener net.Listener
+	addr     string
+	handler  chan *serverHint
+
+	special     *specialServer
+	specialAddr string
+
 	transport *http.Transport
 }
 
 func NewTestRunner(proxy *url.URL, log chan<- *LogEntry) *TestRunner {
 	listener := getListener()
+	trace.T("jvproxy/tester/special", trace.PrioDebug,
+		"ordinary server listening at %s", listener.Addr())
+	special := newSpecialServer()
 	transport := &http.Transport{
 		Proxy: func(*http.Request) (*url.URL, error) { return proxy, nil },
 	}
 	res := &TestRunner{
 		log: log,
 
-		listener:  listener,
-		addr:      listener.Addr().String(),
-		handler:   make(chan *serverHint, 1),
+		listener: listener,
+		addr:     listener.Addr().String(),
+		handler:  make(chan *serverHint, 1),
+
+		special:     special,
+		specialAddr: special.listener.Addr().String(),
+
 		transport: transport,
 	}
 	go http.Serve(res.listener, http.HandlerFunc(res.serveHTTP))
+	go res.special.Serve()
 	return res
 }
 
@@ -62,13 +74,14 @@ func (run *TestRunner) Run(t test.Test) {
 	if testInfo.RFC != "" {
 		entry.Name += " [RFC" + testInfo.RFC + "]"
 	}
+	path := "/" + test.UniqueString(32)
 	for i := 0; i < testInfo.Repeat && !entry.TestFail && !entry.ProxyFail; i++ {
-		run.doRun(t, entry)
+		run.doRun(t, path, entry)
 	}
 	run.log <- entry
 }
 
-func (run *TestRunner) doRun(t test.Test, entry *LogEntry) {
+func (run *TestRunner) doRun(t test.Test, path string, entry *LogEntry) {
 	req := t.Request()
 	if req == nil {
 		entry.Messages = append(entry.Messages,
@@ -76,23 +89,41 @@ func (run *TestRunner) doRun(t test.Test, entry *LogEntry) {
 		entry.TestFail = true
 	} else {
 		req.URL.Scheme = "http"
-		req.URL.Host = run.addr
+		var handler chan *serverHint
+		if _, ok := t.(test.SpecialTest); ok {
+			entry.Messages = append(entry.Messages, "using special server")
+			req.URL.Host = run.specialAddr
+			handler = run.special.handler
+		} else {
+			req.URL.Host = run.addr
+			handler = run.handler
+		}
+		req.URL.Path = path
 
 		timeResp := make(chan times, 1)
-		run.handler <- &serverHint{
-			path:     req.URL.Path,
+		handler <- &serverHint{
+			path:     path,
 			handler:  t.Respond,
 			timeResp: timeResp,
 		}
 
+		trace.T("jvproxy/tester/special", trace.PrioDebug,
+			"requesting %s via proxy", req.URL)
 		sendTime := time.Now()
 		resp, err := run.transport.RoundTrip(req)
 		recvTime := time.Now()
+		if resp != nil {
+			trace.T("jvproxy/tester/special", trace.PrioVerbose,
+				"proxy response received: %v", resp)
+		} else {
+			trace.T("jvproxy/tester/special", trace.PrioDebug,
+				"error while reading proxy response: %s", err)
+		}
 		entry.TotalTime = recvTime.Sub(sendTime)
 
 		serverCalled := true
 		select {
-		case _ = <-run.handler:
+		case _ = <-handler:
 			serverCalled = false
 		default:
 			serverTimes := <-timeResp

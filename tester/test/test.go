@@ -15,6 +15,11 @@ type Test interface {
 	Check(resp *http.Response, err error, serverCalled bool) *Result
 }
 
+type SpecialTest interface {
+	Test
+	Breakage() int
+}
+
 type Info struct {
 	Name   string
 	RFC    string
@@ -40,7 +45,7 @@ func int64ToBytes(x int64) []byte {
 	return bytes
 }
 
-func UniquePath(length int) string {
+func UniqueString(length int) string {
 	seqLock.Lock()
 	k := seq
 	seq += 1

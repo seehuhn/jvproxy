@@ -7,14 +7,11 @@ import (
 )
 
 type AuthTest struct {
-	path  string
 	count int
 }
 
 func NewAuthTest() *AuthTest {
-	return &AuthTest{
-		path: "/" + UniquePath(32),
-	}
+	return &AuthTest{}
 }
 
 func (t *AuthTest) Info() *Info {
@@ -26,7 +23,7 @@ func (t *AuthTest) Info() *Info {
 }
 
 func (t *AuthTest) Request() *http.Request {
-	req, _ := http.NewRequest("GET", t.path, nil)
+	req, _ := http.NewRequest("GET", "/", nil)
 	t.count++
 	if t.count == 1 {
 		req.Header.Add("Authorization", "secret")

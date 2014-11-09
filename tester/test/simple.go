@@ -9,14 +9,12 @@ import (
 // Simple tests whether the proxy passes through simple GET requests
 // to the server.
 type Simple struct {
-	msg  string
-	path string
+	msg string
 }
 
 func NewSimple() *Simple {
 	return &Simple{
-		msg:  UniquePath(128),
-		path: "/" + UniquePath(32),
+		msg: UniqueString(128),
 	}
 }
 
@@ -28,7 +26,7 @@ func (t *Simple) Info() *Info {
 }
 
 func (t *Simple) Request() *http.Request {
-	req, _ := http.NewRequest("GET", t.path, nil)
+	req, _ := http.NewRequest("GET", "/", nil)
 	return req
 }
 

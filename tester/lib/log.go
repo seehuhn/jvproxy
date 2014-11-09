@@ -49,7 +49,7 @@ func (log *Logger) listen() {
 				float64(entry.RespTime)/q)
 		}
 		for _, msg := range entry.Messages {
-			fmt.Println("  " + msg)
+			fmt.Println("     * " + msg)
 		}
 	}
 	close(log.done)

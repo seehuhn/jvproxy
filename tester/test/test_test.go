@@ -11,13 +11,13 @@ func TestSecret(t *testing.T) {
 	}
 }
 
-func TestUniquePath(t *testing.T) {
+func TestUniqueString(t *testing.T) {
 	for i := 10; i < 80; i++ {
-		u1 := UniquePath(i)
+		u1 := UniqueString(i)
 		if len(u1) != i {
 			t.Errorf("len(%q) != %d", u1, i)
 		}
-		u2 := UniquePath(i)
+		u2 := UniqueString(i)
 		if len(u2) != i {
 			t.Errorf("len(%q) != %d", u2, i)
 		}

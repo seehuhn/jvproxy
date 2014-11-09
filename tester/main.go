@@ -23,6 +23,7 @@ func main() {
 	fmt.Println("testing proxy at", proxyUrl)
 
 	log := lib.NewLogger()
+	defer log.Close()
 
 	cacheIsShared := true
 	proxy, err := url.Parse(proxyUrl)
@@ -31,7 +32,13 @@ func main() {
 	}
 	testRunner := lib.NewTestRunner(proxy, log.Submit)
 
+	// tests relating to general proxy operations
+
 	testRunner.Run(test.NewSimple())
+	testRunner.Run(test.NewNoDate())
+
+	// tests relating to caching
+
 	testRunner.Run(test.NewNoCache("7234-3.0.a", "XQRL", nil, nil, 200))
 	testRunner.Run(test.NewNoCache("7234-3.0.b", "GET", nil, nil, 713))
 	h := http.Header{}
@@ -61,6 +68,4 @@ func main() {
 	h.Add("Cache-Control", "public")
 	h.Add("Expires", "Thu, 01 Dec 1994 16:00:00 GMT")
 	testRunner.Run(test.NewNoCache("7234-4.0f1", "GET", nil, h, 200))
-
-	log.Close()
 }
