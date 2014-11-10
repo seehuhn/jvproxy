@@ -2,12 +2,12 @@ package main
 
 import (
 	"bytes"
-	"code.google.com/p/go.crypto/sha3"
 	"encoding/gob"
 	"fmt"
 	"github.com/seehuhn/trace"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
+	"golang.org/x/crypto/sha3"
 	"io"
 	"io/ioutil"
 	"net/http"

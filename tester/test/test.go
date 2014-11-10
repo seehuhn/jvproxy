@@ -1,9 +1,9 @@
 package test
 
 import (
-	"code.google.com/p/go.crypto/sha3"
 	"crypto/rand"
 	"encoding/base64"
+	"golang.org/x/crypto/sha3"
 	"net/http"
 	"sync"
 )
