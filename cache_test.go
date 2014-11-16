@@ -8,7 +8,7 @@ import (
 
 type NullCache struct{}
 
-func (cache *NullCache) Retrieve(*http.Request) *proxyResponse {
+func (cache *NullCache) Retrieve(*http.Request) []*proxyResponse {
 	return nil
 }
 
@@ -47,5 +47,3 @@ func (s *MySuite) TestKeys(c *C) {
 	c.Assert(fields, DeepEquals, []string{"A", "B", "C"})
 	c.Assert(values, DeepEquals, []string{"first, second, third", "", "another"})
 }
-
-var _ Cache = &NullCache{}

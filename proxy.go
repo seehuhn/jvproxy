@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -61,15 +62,35 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	var respData *proxyResponse
 
+	// step 1: check whether any cached responses are available
+	choices := []*proxyResponse{}
 	if cacheInfo.canServeFromCache {
-		respData = proxy.cache.Retrieve(req)
+		choices = proxy.cache.Retrieve(req)
+		if len(choices) > 0 {
+			sort.Sort(byDate(choices))
+			respData = choices[0]
+		}
 	}
-	if respData != nil {
-		log.CacheResult = "HIT"
-		cacheInfo.canStore = false
-	} else {
-		respData = proxy.requestFromUpstream(req)
+
+	// step 2: if the responses are stale, send a validation request
+	stale := true
+	if stale {
+		respData = proxy.requestFromUpstream(req, choices)
 	}
+
+	// step 3: make sure we still have the body of the selected response
+	if respData != nil && respData.body == nil {
+		respData.body = respData.getBody()
+		if respData.body == nil {
+			respData = nil
+		}
+	}
+
+	// step 4: if the above fails, forward the request upstream
+	if respData == nil {
+		respData = proxy.requestFromUpstream(req, nil)
+	}
+
 	log.ResponseReceivedNano = int64(time.Since(requestTime) / time.Nanosecond)
 	log.StatusCode = respData.StatusCode
 
@@ -79,12 +100,18 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	h := w.Header()
 	copyHeader(h, respData.Header)
 	w.WriteHeader(respData.StatusCode)
+
+	if respData.body == nil {
+		respData.body = respData.getBody()
+	}
+	defer respData.body.Close()
+
 	var n int64
 	var err error
 	if cacheInfo.canStore {
 		entry := proxy.cache.StoreStart(
 			req.URL.String(), respData.StatusCode, respData.Header)
-		n, err = io.Copy(w, entry.Reader(respData.Body))
+		n, err = io.Copy(w, entry.Reader(respData.body))
 		if err != nil {
 			entry.Abort()
 		} else {
@@ -92,7 +119,7 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		log.CacheResult = "MISS,STORE"
 	} else {
-		n, err = io.Copy(w, respData.Body)
+		n, err = io.Copy(w, respData.body)
 		if log.CacheResult == "" {
 			log.CacheResult = "MISS,NOSTORE"
 		}
@@ -103,14 +130,24 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	log.ContentLength = n
 	// TODO(voss): compare n to the server-provided Content-Length
-
-	respData.Body.Close()
 }
 
 type proxyResponse struct {
 	StatusCode int
 	Header     http.Header
-	Body       io.ReadCloser
+	source     string
+	body       io.ReadCloser
+	getBody    func() io.ReadCloser
+}
+
+type byDate []*proxyResponse
+
+func (x byDate) Len() int      { return len(x) }
+func (x byDate) Swap(i, j int) { x[i], x[j] = x[j], x[i] }
+func (x byDate) Less(i, j int) bool {
+	dateI := parseDate(x[i].Header.Get("Date"))
+	dateJ := parseDate(x[i].Header.Get("Date"))
+	return dateI.After(dateJ)
 }
 
 // Hop-by-hop headers, as specified in
@@ -126,7 +163,14 @@ var perHopHeaders = []string{
 	"Upgrade",
 }
 
-func (proxy *Proxy) requestFromUpstream(req *http.Request) *proxyResponse {
+// requestFromUpstream forwards a client request to the upstream
+// server.  If `stale` is set, it should be a slice of cached
+// responses; in this case a validation request is sent which asks the
+// server to select one of the available responses.
+//
+// `stale` must be ordered in order of the Date header field, the
+// newest item first.
+func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*proxyResponse) *proxyResponse {
 	upReq := new(http.Request)
 	*upReq = *req // includes shallow copies of maps, care is needed below ...
 	upReq.Proto = "HTTP/1.1"
@@ -163,10 +207,31 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request) *proxyResponse {
 
 	proxy.setVia(upReq.Header, req.Proto)
 
+	// TODO(voss): what to do about pre-existing If-None-Match and
+	//     If-Modified-Since headers?
+	var lastModified time.Time
+	for _, resp := range stale {
+		etag := resp.Header.Get("Etag")
+		if etag != "" {
+			upReq.Header.Add("If-None-Match", etag)
+		}
+		lm := parseDate(resp.Header.Get("Last-Modified"))
+		if lm.After(lastModified) {
+			lastModified = lm
+		}
+	}
+	if req.Method == "GET" || req.Method == "HEAD" {
+		if !lastModified.IsZero() {
+			upReq.Header.Set("If-Modified-Since",
+				lastModified.Format(time.RFC1123))
+		}
+	}
+
 	// requestTime := time.Now()
 	upResp, err := proxy.upstream.RoundTrip(upReq)
 	responseTime := time.Now()
 	if err != nil {
+		// TODO(voss): serve stale responses if available?
 		trace.T("jvproxy/handler", trace.PrioDebug,
 			"upstream server request failed: %s", err.Error())
 		msg := "error: " + err.Error()
@@ -175,7 +240,98 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request) *proxyResponse {
 		return &proxyResponse{ // TODO(voss)
 			StatusCode: 555,
 			Header:     h,
-			Body:       ioutil.NopCloser(strings.NewReader(msg)),
+			source:     "error",
+			body:       ioutil.NopCloser(strings.NewReader(msg)),
+		}
+	}
+
+	if upResp.StatusCode == http.StatusNotModified {
+		selected := []*proxyResponse{}
+		done := false
+
+		eTag1 := upResp.Header.Get("Etag")
+		lastModified1 := upResp.Header.Get("Last-Modified")
+		lm := parseDate(lastModified1)
+
+		// RFC 7234, section 4.3.4a: If the new response contains a
+		// strong validator (see Section 2.1 of [RFC7232]), then that
+		// strong validator identifies the selected representation for
+		// update.  All of the stored responses with the same strong
+		// validator are selected.  If none of the stored responses
+		// contain the same strong validator, then the cache MUST NOT
+		// use the new response to update any stored responses.
+		if eTag1 != "" && !strings.HasPrefix(eTag1, "W/") {
+			for _, resp := range stale {
+				eTag2 := resp.Header.Get("Etag")
+				if eTag1 == eTag2 {
+					selected = append(selected, resp)
+				}
+			}
+			done = true
+		}
+		if !done && !lm.IsZero() {
+			// RFC 7232, section-2.2.2b: [A Last-Modified header can
+			// be used as a strong validator, if the] cache entry
+			// includes a Date value, which gives the time when the
+			// origin server sent the original response, and [the]
+			// presented Last-Modified time is at least 60 seconds
+			// before the Date value.
+			for _, resp := range stale {
+				date := parseDate(resp.Header.Get("Date"))
+				if !date.IsZero() && date.Sub(lm) >= 60*time.Second {
+					selected = append(selected, resp)
+					done = true
+				}
+			}
+		}
+
+		// RFC 7234, section 4.3.4b: If the new response contains a
+		// weak validator and that validator corresponds to one of the
+		// cache's stored responses, then the most recent of those
+		// matching stored responses is selected for update.
+		if !done && eTag1 != "" {
+			if !strings.HasPrefix(eTag1, "W/") {
+				panic("something went wrong")
+			}
+			eTag1 = eTag1[2:]
+			for _, resp := range stale {
+				eTag2 := resp.Header.Get("Etag")
+				if strings.HasPrefix(eTag2, "W/") {
+					eTag2 = eTag2[2:]
+				}
+				if eTag1 == eTag2 {
+					selected = append(selected, resp)
+				}
+			}
+			if len(selected) > 0 {
+				selected = selected[:1]
+				done = true
+			}
+		}
+		if !done && !lm.IsZero() {
+			for _, resp := range stale {
+				lastModified2 := resp.Header.Get("Last-Modified")
+				if lastModified1 == lastModified2 {
+					selected = append(selected, resp)
+				}
+			}
+			if len(selected) > 0 {
+				selected = selected[:1]
+				done = true
+			}
+		}
+
+		// RFC 7234, section 4.3.4c: If the new response does not
+		// include any form of validator (such as in the case where a
+		// client generates an If-Modified-Since request from a source
+		// other than the Last-Modified response header field), and
+		// there is only one stored response, and that stored response
+		// also lacks a validator, then that stored response is
+		// selected for update.
+		if !done && eTag1 == "" && len(stale) == 1 &&
+			stale[0].Header.Get("Last-Modified") == "" {
+			selected = stale
+			done = true
 		}
 	}
 
@@ -186,14 +342,14 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request) *proxyResponse {
 	}
 	proxy.setVia(upResp.Header, upResp.Proto)
 	if len(upResp.Header["Date"]) == 0 {
-		upResp.Header.Set("Date",
-			responseTime.Format(time.RFC1123))
+		upResp.Header.Set("Date", responseTime.Format(time.RFC1123))
 	}
 
 	return &proxyResponse{
 		StatusCode: upResp.StatusCode,
 		Header:     upResp.Header,
-		Body:       upResp.Body,
+		source:     "upstream",
+		body:       upResp.Body,
 	}
 }
 
@@ -228,7 +384,7 @@ func (proxy *Proxy) getCacheability(req *http.Request) *decision {
 	res.canStore = true
 
 	if req.Method != "GET" && req.Method != "HEAD" {
-		// TODO(voss): handle POST?
+		// TODO(voss): handle more method types
 		res.canStore = false
 		res.log = append(res.log, "req:method="+req.Method)
 	}

@@ -23,7 +23,7 @@ const (
 const hashLen = 32
 
 type Cache interface {
-	Retrieve(*http.Request) *proxyResponse
+	Retrieve(*http.Request) []*proxyResponse
 	StoreStart(url string, statusCode int, header http.Header) CacheEntry
 	Close() error
 }
@@ -85,14 +85,10 @@ func (cache *ldbCache) getStoreName(hash []byte) string {
 	return filepath.Join(cache.baseDir, a, b)
 }
 
-type ldbMetaData struct {
-	StatusCode int
-	Header     http.Header
-}
-
-func (cache *ldbCache) loadLdbMetaData(hash []byte) *ldbMetaData {
-	// TODO(voss): unpack directly into a proxyResponse?
-	res := &ldbMetaData{}
+func (cache *ldbCache) loadLdbMetaData(hash []byte) *proxyResponse {
+	res := &proxyResponse{
+		source: "cache",
+	}
 
 	file, err := os.Open(cache.getStoreName(hash))
 	if err != nil {
@@ -109,7 +105,7 @@ func (cache *ldbCache) loadLdbMetaData(hash []byte) *ldbMetaData {
 	return res
 }
 
-func (cache *ldbCache) storeLdbMetaData(m *ldbMetaData) []byte {
+func (cache *ldbCache) storeLdbMetaData(m *proxyResponse) []byte {
 	buf := bytes.Buffer{}
 	enc := gob.NewEncoder(&buf)
 	err := enc.Encode(m)
@@ -180,9 +176,10 @@ func keyToUrl(key []byte) (url string, fields []string, values []string) {
 	return
 }
 
-func (cache *ldbCache) Retrieve(req *http.Request) *proxyResponse {
-	url := req.URL.String()
+func (cache *ldbCache) Retrieve(req *http.Request) []*proxyResponse {
+	res := make([]*proxyResponse, 0, 1)
 
+	url := req.URL.String()
 	keyPfx := make([]byte, len(url)+1)
 	copy(keyPfx, url)
 	limits := util.BytesPrefix(keyPfx)
@@ -201,7 +198,6 @@ func (cache *ldbCache) Retrieve(req *http.Request) *proxyResponse {
 		if !varyHeadersMatch(fields, values, req.Header) {
 			continue
 		}
-		// TODO(voss): check freshness/lifetime
 
 		hashes := iter.Value()
 		metaHash := hashes[:hashLen]
@@ -210,21 +206,17 @@ func (cache *ldbCache) Retrieve(req *http.Request) *proxyResponse {
 			continue
 		}
 		contentHash := hashes[hashLen:]
-		body, err := os.Open(cache.getStoreName(contentHash))
-		if err != nil {
-			continue
+		metaData.getBody = func() io.ReadCloser {
+			body, _ := os.Open(cache.getStoreName(contentHash))
+			return body
 		}
-		return &proxyResponse{
-			StatusCode: metaData.StatusCode,
-			Header:     metaData.Header,
-			Body:       body,
-		}
+		res = append(res, metaData)
 	}
-	return nil
+	return res
 }
 
 func (cache *ldbCache) StoreStart(url string, status int, header http.Header) CacheEntry {
-	m := &ldbMetaData{
+	m := &proxyResponse{
 		StatusCode: status,
 		Header:     header,
 	}
