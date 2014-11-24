@@ -15,15 +15,17 @@ type Test interface {
 	Check(resp *http.Response, err error, serverCalled bool) *Result
 }
 
-type SpecialTest interface {
-	Test
-	Breakage() int
-}
+type Breakage uint16
+
+const (
+	BreakDate Breakage = 1 << iota
+)
 
 type Info struct {
 	Name   string
 	RFC    string
 	Repeat int
+	Server Breakage
 }
 
 type Result struct {

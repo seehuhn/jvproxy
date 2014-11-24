@@ -74,7 +74,7 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// step 2: if the responses are stale, send a validation request
 	stale := true
-	if stale {
+	if stale || cacheInfo.mustRevalidate {
 		respData = proxy.requestFromUpstream(req, choices)
 	}
 
@@ -245,6 +245,16 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*proxyRespons
 		}
 	}
 
+	// Fix upstream-provided headers as required for forwarding and
+	// storage.
+	for _, name := range perHopHeaders {
+		upResp.Header.Del(name)
+	}
+	proxy.setVia(upResp.Header, upResp.Proto)
+	if len(upResp.Header["Date"]) == 0 {
+		upResp.Header.Set("Date", responseTime.Format(time.RFC1123))
+	}
+
 	if upResp.StatusCode == http.StatusNotModified {
 		selected := []*proxyResponse{}
 		done := false
@@ -333,16 +343,39 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*proxyRespons
 			selected = stale
 			done = true
 		}
-	}
 
-	// Fix upstream-provided headers as required for forwarding and
-	// storage.
-	for _, name := range perHopHeaders {
-		upResp.Header.Del(name)
-	}
-	proxy.setVia(upResp.Header, upResp.Proto)
-	if len(upResp.Header["Date"]) == 0 {
-		upResp.Header.Set("Date", responseTime.Format(time.RFC1123))
+		if len(selected) > 0 {
+			// RFC 7234, section 4.3.4: If a stored response is
+			// selected for update, the cache MUST:
+			for _, entry := range selected {
+				// RFC 7234, section 4.3.4d: delete any Warning header
+				// fields in the stored response with warn-code 1xx;
+				warn := entry.Header["Warning"]
+				i := 0
+				for i < len(warn) {
+					if strings.HasPrefix(warn[i], "1") {
+						warn = append(warn[:i], warn[i+1:]...)
+					} else {
+						i++
+					}
+				}
+
+				// RFC 7234, section 4.3.4f: use other header fields
+				// provided in the 304 (Not Modified) response to
+				// replace all instances of the corresponding header
+				// fields in the stored response.
+				//
+				// TODO(voss): what is "corresponding"?
+				for key, val := range upResp.Header {
+					entry.Header[key] = val
+				}
+
+				// TODO(voss): save the freshened response in the cache
+			}
+
+			sort.Sort(byDate(selected))
+			return selected[0]
+		}
 	}
 
 	return &proxyResponse{

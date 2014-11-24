@@ -20,8 +20,7 @@ func NewSimple() *Simple {
 
 func (t *Simple) Info() *Info {
 	return &Info{
-		Name:   "Simple",
-		Repeat: 1,
+		Name: "Simple",
 	}
 }
 

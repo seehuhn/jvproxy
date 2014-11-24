@@ -69,6 +69,9 @@ func (run *TestRunner) Close() error {
 
 func (run *TestRunner) Run(t test.Test) {
 	testInfo := t.Info()
+	if testInfo.Repeat < 1 {
+		testInfo.Repeat = 1
+	}
 	entry := &LogEntry{}
 	entry.Name = testInfo.Name
 	if testInfo.RFC != "" {
@@ -90,7 +93,8 @@ func (run *TestRunner) doRun(t test.Test, path string, entry *LogEntry) {
 	} else {
 		req.URL.Scheme = "http"
 		var handler chan *serverHint
-		if _, ok := t.(test.SpecialTest); ok {
+		breakage := t.Info().Server
+		if breakage != 0 {
 			entry.Messages = append(entry.Messages, "using special server")
 			req.URL.Host = run.specialAddr
 			handler = run.special.handler

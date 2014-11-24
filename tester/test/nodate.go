@@ -18,12 +18,8 @@ func (t *NoDate) Info() *Info {
 	return &Info{
 		Name:   "NoDate",
 		RFC:    "7231-7.1.1.2",
-		Repeat: 1,
+		Server: BreakDate,
 	}
-}
-
-func (t *NoDate) Breakage() int {
-	return 1
 }
 
 func (t *NoDate) Request() *http.Request {

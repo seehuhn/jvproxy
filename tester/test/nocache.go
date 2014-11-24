@@ -75,24 +75,25 @@ func (t *NoCache) Check(resp *http.Response, err error, up bool) *Result {
 		return res
 	}
 
-	data, err := ioutil.ReadAll(resp.Body)
+	bodyData, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
 		res.Pass = false
 		res.Messages = append(res.Messages,
 			"error while reading body: "+err.Error())
 	}
-	received := string(data)
+	body := string(bodyData)
+
 	if !up {
 		res.Pass = false
 		res.Messages = append(res.Messages, "proxy didn't contact server")
-	} else if t.count > 1 && received == t.body[0] {
+	} else if t.count > 1 && body == t.body[0] {
 		res.Pass = false
-		res.Messages = append(res.Messages, "received outdated response")
-	} else if expected := t.body[len(t.body)-1]; received != expected {
+		res.Messages = append(res.Messages, "body outdated response")
+	} else if expected := t.body[len(t.body)-1]; body != expected {
 		res.Pass = false
 		msg := fmt.Sprintf("wrong server response, expected %q, got %q",
-			expected, received)
+			expected, body)
 		res.Messages = append(res.Messages, msg)
 	}
 

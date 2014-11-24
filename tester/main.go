@@ -68,4 +68,6 @@ func main() {
 	h.Add("Cache-Control", "public")
 	h.Add("Expires", "Thu, 01 Dec 1994 16:00:00 GMT")
 	testRunner.Run(test.NewNoCache("7234-4.0f1", "GET", nil, h, 200))
+
+	testRunner.Run(test.NewValidate())
 }
