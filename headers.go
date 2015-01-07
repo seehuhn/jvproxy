@@ -20,7 +20,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 	"unicode/utf8"
 )
 
@@ -173,19 +172,6 @@ func parseHeaders(headers []string) (map[string]string, error) {
 		}
 	}
 	return res, err
-}
-
-func parseDate(dateStr string) time.Time {
-	var t time.Time
-	if dateStr != "" {
-		for _, format := range []string{time.RFC1123, time.RFC850, time.ANSIC} {
-			t, err := time.Parse(format, dateStr)
-			if err == nil {
-				return t
-			}
-		}
-	}
-	return t
 }
 
 func copyHeader(dst, src http.Header) {

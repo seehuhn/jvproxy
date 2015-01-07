@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/seehuhn/httputil"
 	"github.com/seehuhn/trace"
 	"io"
 	"io/ioutil"
@@ -145,8 +146,8 @@ type byDate []*proxyResponse
 func (x byDate) Len() int      { return len(x) }
 func (x byDate) Swap(i, j int) { x[i], x[j] = x[j], x[i] }
 func (x byDate) Less(i, j int) bool {
-	dateI := parseDate(x[i].Header.Get("Date"))
-	dateJ := parseDate(x[i].Header.Get("Date"))
+	dateI := httputil.ParseDate(x[i].Header.Get("Date"))
+	dateJ := httputil.ParseDate(x[i].Header.Get("Date"))
 	return dateI.After(dateJ)
 }
 
@@ -215,7 +216,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*proxyRespons
 		if etag != "" {
 			upReq.Header.Add("If-None-Match", etag)
 		}
-		lm := parseDate(resp.Header.Get("Last-Modified"))
+		lm := httputil.ParseDate(resp.Header.Get("Last-Modified"))
 		if lm.After(lastModified) {
 			lastModified = lm
 		}
@@ -261,7 +262,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*proxyRespons
 
 		eTag1 := upResp.Header.Get("Etag")
 		lastModified1 := upResp.Header.Get("Last-Modified")
-		lm := parseDate(lastModified1)
+		lm := httputil.ParseDate(lastModified1)
 
 		// RFC 7234, section 4.3.4a: If the new response contains a
 		// strong validator (see Section 2.1 of [RFC7232]), then that
@@ -287,7 +288,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*proxyRespons
 			// presented Last-Modified time is at least 60 seconds
 			// before the Date value.
 			for _, resp := range stale {
-				date := parseDate(resp.Header.Get("Date"))
+				date := httputil.ParseDate(resp.Header.Get("Date"))
 				if !date.IsZero() && date.Sub(lm) >= 60*time.Second {
 					selected = append(selected, resp)
 					done = true
