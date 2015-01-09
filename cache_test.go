@@ -45,5 +45,5 @@ func (s *MySuite) TestKeys(c *C) {
 	url, fields, values = keyToUrl(key)
 	c.Assert(url, Equals, testUrl)
 	c.Assert(fields, DeepEquals, []string{"A", "B", "C"})
-	c.Assert(values, DeepEquals, []string{"first, second, third", "", "another"})
+	c.Assert(values, DeepEquals, []string{"first,second,third", "", "another"})
 }
