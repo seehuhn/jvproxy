@@ -1,4 +1,4 @@
-package main
+package jvproxy
 
 import (
 	"github.com/seehuhn/httputil"
@@ -61,28 +61,29 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	cacheInfo := proxy.getCacheability(req)
 
-	var respData *proxyResponse
+	var respData *ProxyResponse
 
 	// step 1: check whether any cached responses are available
-	choices := []*proxyResponse{}
+	choices := []*ProxyResponse{}
 	if cacheInfo.canServeFromCache {
 		choices = proxy.cache.Retrieve(req)
 		if len(choices) > 0 {
 			sort.Sort(byDate(choices))
+			// TODO(voss): is the following what we want?
 			respData = choices[0]
 		}
 	}
 
 	// step 2: if the responses are stale, send a validation request
-	stale := true
+	stale := true // TODO(voss): test for staleness
 	if stale || cacheInfo.mustRevalidate {
 		respData = proxy.requestFromUpstream(req, choices)
 	}
 
 	// step 3: make sure we still have the body of the selected response
-	if respData != nil && respData.body == nil {
-		respData.body = respData.getBody()
-		if respData.body == nil {
+	if respData != nil && respData.Body == nil {
+		respData.Body = respData.GetBody()
+		if respData.Body == nil {
 			respData = nil
 		}
 	}
@@ -102,25 +103,25 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	copyHeader(h, respData.Header)
 	w.WriteHeader(respData.StatusCode)
 
-	if respData.body == nil {
-		respData.body = respData.getBody()
+	if respData.Body == nil {
+		respData.Body = respData.GetBody()
 	}
-	defer respData.body.Close()
+	defer respData.Body.Close()
 
 	var n int64
 	var err error
 	if cacheInfo.canStore {
 		entry := proxy.cache.StoreStart(
 			req.URL.String(), respData.StatusCode, respData.Header)
-		n, err = io.Copy(w, entry.Reader(respData.body))
+		n, err = io.Copy(w, entry.Reader(respData.Body))
 		if err != nil {
-			entry.Abort()
+			entry.Discard()
 		} else {
 			entry.Complete()
 		}
 		log.CacheResult = "MISS,STORE"
 	} else {
-		n, err = io.Copy(w, respData.body)
+		n, err = io.Copy(w, respData.Body)
 		if log.CacheResult == "" {
 			log.CacheResult = "MISS,NOSTORE"
 		}
@@ -133,15 +134,15 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// TODO(voss): compare n to the server-provided Content-Length
 }
 
-type proxyResponse struct {
+type ProxyResponse struct {
 	StatusCode int
 	Header     http.Header
-	source     string
-	body       io.ReadCloser
-	getBody    func() io.ReadCloser
+	Source     string
+	Body       io.ReadCloser
+	GetBody    func() io.ReadCloser
 }
 
-type byDate []*proxyResponse
+type byDate []*ProxyResponse
 
 func (x byDate) Len() int      { return len(x) }
 func (x byDate) Swap(i, j int) { x[i], x[j] = x[j], x[i] }
@@ -171,7 +172,7 @@ var perHopHeaders = []string{
 //
 // `stale` must be ordered in order of the Date header field, the
 // newest item first.
-func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*proxyResponse) *proxyResponse {
+func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*ProxyResponse) *ProxyResponse {
 	upReq := new(http.Request)
 	*upReq = *req // includes shallow copies of maps, care is needed below ...
 	upReq.Proto = "HTTP/1.1"
@@ -238,11 +239,11 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*proxyRespons
 		msg := "error: " + err.Error()
 		h := http.Header{}
 		h.Add("Content-Type", "text/plain")
-		return &proxyResponse{ // TODO(voss)
+		return &ProxyResponse{ // TODO(voss)
 			StatusCode: 555,
 			Header:     h,
-			source:     "error",
-			body:       ioutil.NopCloser(strings.NewReader(msg)),
+			Source:     "error",
+			Body:       ioutil.NopCloser(strings.NewReader(msg)),
 		}
 	}
 
@@ -257,7 +258,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*proxyRespons
 	}
 
 	if upResp.StatusCode == http.StatusNotModified {
-		selected := []*proxyResponse{}
+		selected := []*ProxyResponse{}
 		done := false
 
 		eTag1 := upResp.Header.Get("Etag")
@@ -379,11 +380,11 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*proxyRespons
 		}
 	}
 
-	return &proxyResponse{
+	return &ProxyResponse{
 		StatusCode: upResp.StatusCode,
 		Header:     upResp.Header,
-		source:     "upstream",
-		body:       upResp.Body,
+		Source:     "upstream",
+		Body:       upResp.Body,
 	}
 }
 
@@ -406,8 +407,6 @@ type decision struct {
 	log               []string
 }
 
-// first result: can use cache for response
-// second result: can store server response in cache
 func (proxy *Proxy) getCacheability(req *http.Request) *decision {
 	res := &decision{}
 
@@ -450,7 +449,7 @@ func (proxy *Proxy) getCacheability(req *http.Request) *decision {
 	return res
 }
 
-func (proxy *Proxy) updateCacheability(resp *proxyResponse, res *decision) {
+func (proxy *Proxy) updateCacheability(resp *ProxyResponse, res *decision) {
 	// At this point we already have obtained a new response from the
 	// server: only the .canStore field is still interesting.
 

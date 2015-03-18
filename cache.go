@@ -1,4 +1,4 @@
-package main
+package jvproxy
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ const (
 const hashLen = 32
 
 type Cache interface {
-	Retrieve(*http.Request) []*proxyResponse
+	Retrieve(*http.Request) []*ProxyResponse
 	StoreStart(url string, statusCode int, header http.Header) CacheEntry
 	Close() error
 }
@@ -31,7 +31,7 @@ type Cache interface {
 type CacheEntry interface {
 	Reader(io.Reader) io.Reader
 	Complete()
-	Abort()
+	Discard()
 }
 
 type ldbCache struct {
@@ -85,9 +85,9 @@ func (cache *ldbCache) getStoreName(hash []byte) string {
 	return filepath.Join(cache.baseDir, a, b)
 }
 
-func (cache *ldbCache) loadLdbMetaData(hash []byte) *proxyResponse {
-	res := &proxyResponse{
-		source: "cache",
+func (cache *ldbCache) loadLdbMetaData(hash []byte) *ProxyResponse {
+	res := &ProxyResponse{
+		Source: "cache",
 	}
 
 	file, err := os.Open(cache.getStoreName(hash))
@@ -105,7 +105,7 @@ func (cache *ldbCache) loadLdbMetaData(hash []byte) *proxyResponse {
 	return res
 }
 
-func (cache *ldbCache) storeLdbMetaData(m *proxyResponse) []byte {
+func (cache *ldbCache) storeLdbMetaData(m *ProxyResponse) []byte {
 	buf := bytes.Buffer{}
 	enc := gob.NewEncoder(&buf)
 	err := enc.Encode(m)
@@ -176,8 +176,8 @@ func keyToUrl(key []byte) (url string, fields []string, values []string) {
 	return
 }
 
-func (cache *ldbCache) Retrieve(req *http.Request) []*proxyResponse {
-	res := make([]*proxyResponse, 0, 1)
+func (cache *ldbCache) Retrieve(req *http.Request) []*ProxyResponse {
+	res := make([]*ProxyResponse, 0, 1)
 
 	url := req.URL.String()
 	keyPfx := make([]byte, len(url)+1)
@@ -206,7 +206,7 @@ func (cache *ldbCache) Retrieve(req *http.Request) []*proxyResponse {
 			continue
 		}
 		contentHash := hashes[hashLen:]
-		metaData.getBody = func() io.ReadCloser {
+		metaData.GetBody = func() io.ReadCloser {
 			body, _ := os.Open(cache.getStoreName(contentHash))
 			return body
 		}
@@ -216,7 +216,7 @@ func (cache *ldbCache) Retrieve(req *http.Request) []*proxyResponse {
 }
 
 func (cache *ldbCache) StoreStart(url string, status int, header http.Header) CacheEntry {
-	m := &proxyResponse{
+	m := &ProxyResponse{
 		StatusCode: status,
 		Header:     header,
 	}
@@ -287,7 +287,7 @@ func (entry *ldbEntry) Complete() {
 	entry.cache.DB.Put(entry.key, hash, nil)
 }
 
-func (entry *ldbEntry) Abort() {
+func (entry *ldbEntry) Discard() {
 	tmpName := entry.store.Name()
 	entry.store.Close()
 	err := os.Remove(tmpName)

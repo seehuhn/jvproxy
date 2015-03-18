@@ -1,4 +1,4 @@
-package main
+package jvproxy
 
 import (
 	. "gopkg.in/check.v1"
@@ -8,7 +8,7 @@ import (
 
 type NullCache struct{}
 
-func (cache *NullCache) Retrieve(*http.Request) []*proxyResponse {
+func (cache *NullCache) Retrieve(*http.Request) []*ProxyResponse {
 	return nil
 }
 
@@ -26,7 +26,7 @@ func (entry *nullEntry) Reader(r io.Reader) io.Reader {
 	return r
 }
 func (entry *nullEntry) Complete() {}
-func (entry *nullEntry) Abort()    {}
+func (entry *nullEntry) Discard()    {}
 
 func (s *MySuite) TestKeys(c *C) {
 	testUrl := "http://example.com/test"

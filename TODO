@@ -2,7 +2,7 @@ TODO
 ----
 
 - store entries in leveldb in date order
-- revalidate, if the cached response contains the no-cache cache directive
+- revalidate, if the cached response contains the no-cache directive
 - implement more of RFC 7234 and RFC 2616
 - add more unit tests
 - add a mechanism for pruning the cache
