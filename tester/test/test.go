@@ -21,16 +21,42 @@ const (
 	BreakDate Breakage = 1 << iota
 )
 
+// Info contains static information about a Test.
 type Info struct {
-	Name   string
-	RFC    string
+	// Name is the name of the test for us in log output.
+	Name string
+
+	// RFC is the number and section of the RFC being tested.  For
+	// example, the value "1111-2.3" would indicate that section 2.3
+	// of RFC1111 is being tested.
+	RFC string
+
+	// Repeat indicates how often the test needs to be run.
 	Repeat int
+
+	// Server is a bit-field which indicates whether the test is meant
+	// to be run with a HTTP server exhibiting certain peculiarities.
 	Server Breakage
 }
 
+type CacheProperties uint16
+
+const (
+	IsCaching CacheProperties = 1 << iota
+	DoesRevalidate
+)
+
+// Result is used to record the outcome of a specific test case.
 type Result struct {
-	Pass     bool
+	// Pass indicates whether the cache passed this specific test case.
+	Pass bool
+
+	// Messages is a slice of strings to include in the log file.
 	Messages []string
+
+	// Detected is a bit-field which records detected properties of
+	// the cache being tested.
+	Detected CacheProperties
 }
 
 var testerSecret []byte

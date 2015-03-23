@@ -6,9 +6,10 @@ import (
 	"net/http"
 )
 
-// Verify that a server response is not cached by the proxy.
+// The NoCache test verifies that a server response is not cached by
+// the proxy.
 type NoCache struct {
-	RFC         string
+	rfc         string
 	method      string
 	reqHeaders  http.Header
 	respHeaders http.Header
@@ -20,7 +21,7 @@ type NoCache struct {
 
 func NewNoCache(RFC string, m string, h1, h2 http.Header, c int) *NoCache {
 	return &NoCache{
-		RFC:         RFC,
+		rfc:         RFC,
 		method:      m,
 		reqHeaders:  h1,
 		respHeaders: h2,
@@ -31,7 +32,7 @@ func NewNoCache(RFC string, m string, h1, h2 http.Header, c int) *NoCache {
 func (t *NoCache) Info() *Info {
 	return &Info{
 		Name:   "NoCache",
-		RFC:    t.RFC,
+		RFC:    t.rfc,
 		Repeat: 2,
 	}
 }
@@ -90,6 +91,7 @@ func (t *NoCache) Check(resp *http.Response, err error, up bool) *Result {
 	} else if t.count > 1 && body == t.body[0] {
 		res.Pass = false
 		res.Messages = append(res.Messages, "body outdated response")
+		res.Detected |= IsCaching
 	} else if expected := t.body[len(t.body)-1]; body != expected {
 		res.Pass = false
 		msg := fmt.Sprintf("wrong server response, expected %q, got %q",

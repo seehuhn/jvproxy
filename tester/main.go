@@ -7,8 +7,12 @@ import (
 	"github.com/seehuhn/jvproxy/tester/test"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
+
+var privateCacheFlag = flag.Bool("private", false,
+	"test a private (per-user) cache")
 
 func main() {
 	flag.Parse()
@@ -21,20 +25,24 @@ func main() {
 		proxyUrl = "http://" + proxyUrl
 	}
 	fmt.Println("testing proxy at", proxyUrl)
-
-	log := lib.NewLogger()
-	defer log.Close()
-
-	cacheIsShared := true
 	proxy, err := url.Parse(proxyUrl)
 	if err != nil {
 		panic(err)
 	}
+
+	log := lib.NewLogger()
+	defer log.Close()
 	testRunner := lib.NewTestRunner(proxy, log.Submit)
 
-	// tests relating to general proxy operations
+	// test whether the proxy can be reached
+	ok := testRunner.Run(test.NewSimple())
+	if !ok {
+		log.Close()
+		fmt.Fprint(os.Stderr, "proxy failed, aborting ...\n")
+		os.Exit(1)
+	}
 
-	testRunner.Run(test.NewSimple())
+	// tests relating to general proxy operations
 	testRunner.Run(test.NewNoDate())
 
 	// tests relating to caching
@@ -45,7 +53,7 @@ func main() {
 	h.Add("Cache-Control", "no-store")
 	testRunner.Run(test.NewNoCache("7234-3.0.c-req", "GET", h, nil, 200))
 	testRunner.Run(test.NewNoCache("7234-3.0.c-resp", "GET", nil, h, 200))
-	if cacheIsShared {
+	if !*privateCacheFlag {
 		h = http.Header{}
 		h.Add("Cache-Control", "private")
 		testRunner.Run(test.NewNoCache("7234-3.0.d", "GET", nil, h, 200))

@@ -36,6 +36,10 @@ type TestRunner struct {
 	specialAddr string
 
 	transport *http.Transport
+
+	Detected     test.CacheProperties
+	SuccessCount int
+	FailCount    int
 }
 
 func NewTestRunner(proxy *url.URL, log chan<- *LogEntry) *TestRunner {
@@ -67,7 +71,7 @@ func (run *TestRunner) Close() error {
 	return run.listener.Close()
 }
 
-func (run *TestRunner) Run(t test.Test) {
+func (run *TestRunner) Run(t test.Test) bool {
 	testInfo := t.Info()
 	if testInfo.Repeat < 1 {
 		testInfo.Repeat = 1
@@ -82,6 +86,14 @@ func (run *TestRunner) Run(t test.Test) {
 		run.doRun(t, path, entry)
 	}
 	run.log <- entry
+
+	if entry.TestFail {
+		run.FailCount++
+	} else {
+		run.SuccessCount++
+	}
+
+	return !entry.ProxyFail
 }
 
 func (run *TestRunner) doRun(t test.Test, path string, entry *LogEntry) {
@@ -137,6 +149,7 @@ func (run *TestRunner) doRun(t test.Test, path string, entry *LogEntry) {
 		testResult := t.Check(resp, err, serverCalled)
 		entry.ProxyFail = !testResult.Pass
 		entry.Messages = append(entry.Messages, testResult.Messages...)
+		run.Detected |= testResult.Detected
 	}
 }
 

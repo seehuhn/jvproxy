@@ -6,6 +6,8 @@ import (
 	"net/http"
 )
 
+// AuthTest exercises the requirements of RFC7234, section 3.2
+// (Storing Responses to Authenticated Requests).
 type AuthTest struct {
 	count int
 }
