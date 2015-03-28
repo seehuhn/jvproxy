@@ -12,7 +12,7 @@ func (cache *NullCache) Retrieve(*http.Request) []*ProxyResponse {
 	return nil
 }
 
-func (cache *NullCache) StoreStart(string, int, http.Header) CacheEntry {
+func (cache *NullCache) StoreStart(string, int, http.Header) StoreCont {
 	return &nullEntry{}
 }
 
@@ -25,8 +25,8 @@ type nullEntry struct{}
 func (entry *nullEntry) Reader(r io.Reader) io.Reader {
 	return r
 }
-func (entry *nullEntry) Complete() {}
-func (entry *nullEntry) Discard()    {}
+func (entry *nullEntry) Commit()  {}
+func (entry *nullEntry) Discard() {}
 
 func (s *MySuite) TestKeys(c *C) {
 	testUrl := "http://example.com/test"

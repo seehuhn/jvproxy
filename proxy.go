@@ -117,7 +117,7 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			entry.Discard()
 		} else {
-			entry.Complete()
+			entry.Commit()
 		}
 		log.CacheResult = "MISS,STORE"
 	} else {
@@ -239,7 +239,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*ProxyRespons
 		msg := "error: " + err.Error()
 		h := http.Header{}
 		h.Add("Content-Type", "text/plain")
-		return &ProxyResponse{ // TODO(voss)
+		return &ProxyResponse{ // TODO(voss): invent error reporting mechanism
 			StatusCode: 555,
 			Header:     h,
 			Source:     "error",
@@ -367,7 +367,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*ProxyRespons
 				// replace all instances of the corresponding header
 				// fields in the stored response.
 				//
-				// TODO(voss): what is "corresponding"?
+				// TODO(voss): what is "other"?
 				for key, val := range upResp.Header {
 					entry.Header[key] = val
 				}

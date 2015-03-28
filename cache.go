@@ -23,14 +23,41 @@ const (
 const hashLen = 32
 
 type Cache interface {
+	// Retrieve returns all cache entries available for a given HTTP request.
 	Retrieve(*http.Request) []*ProxyResponse
-	StoreStart(url string, statusCode int, header http.Header) CacheEntry
+
+	// StoreStart initiates the process of storing a new server
+	// response in the cache.  The metadata of the response (url,
+	// headers, and status code) is provided as arguments to the
+	// StoreStart call, the response body must be delivered to the
+	// returned StoreCont object.
+	StoreStart(url string, statusCode int, header http.Header) StoreCont
+
+	// Close makes sure all persistent data is stored on disk and
+	// frees all resources associated with the cache.  The cache
+	// cannot be used anymore after Close has been called.
 	Close() error
 }
 
-type CacheEntry interface {
-	Reader(io.Reader) io.Reader
-	Complete()
+// StoreCont objects are used to store a response body in the cache,
+// after the metadata has been stored in the cache using the
+// Cache.StoreStart() method.
+type StoreCont interface {
+	// Reader returns an io.Reader which stores in the cache what it
+	// reads from r.  The argument should normally be the .Body field
+	// of the server response.  The resulting cache entry is stored in
+	// temporary storage until either .Commit() or .Discard() is
+	// called.
+	Reader(r io.Reader) io.Reader
+
+	// Commit signals that the server response was received
+	// successfully and that the response body should be committed to
+	// persistent storage.
+	Commit()
+
+	// Discard signals that transfer of the server response was
+	// unsuccessful (i.e. because the connection was interrupted) and
+	// that the data written so far should be discarded.
 	Discard()
 }
 
@@ -215,7 +242,7 @@ func (cache *ldbCache) Retrieve(req *http.Request) []*ProxyResponse {
 	return res
 }
 
-func (cache *ldbCache) StoreStart(url string, status int, header http.Header) CacheEntry {
+func (cache *ldbCache) StoreStart(url string, status int, header http.Header) StoreCont {
 	m := &ProxyResponse{
 		StatusCode: status,
 		Header:     header,
@@ -254,7 +281,7 @@ func (entry *ldbEntry) Reader(r io.Reader) io.Reader {
 	return io.TeeReader(io.TeeReader(r, entry.hash), entry.store)
 }
 
-func (entry *ldbEntry) Complete() {
+func (entry *ldbEntry) Commit() {
 	tmpName := entry.store.Name()
 	defer func() {
 		err := os.Remove(tmpName)
