@@ -12,7 +12,7 @@ func (cache *NullCache) Retrieve(*http.Request) []*CacheEntry {
 	return nil
 }
 
-func (cache *NullCache) StoreStart(string, int, http.Header) StoreCont {
+func (cache *NullCache) StoreStart(string, *MetaData) StoreCont {
 	return &nullEntry{}
 }
 

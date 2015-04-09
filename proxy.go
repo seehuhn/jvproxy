@@ -78,7 +78,12 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// step 2: if the responses are stale, send a validation request
-	stale := true // TODO(voss): test for staleness
+	stale := true
+	if respData != nil {
+		freshnessLifetime := proxy.getFreshnessLifetime(respData)
+		currentAge := proxy.getCurrentAge(respData)
+		stale = freshnessLifetime <= currentAge
+	}
 	if stale || cacheInfo.mustRevalidate {
 		respData = proxy.requestFromUpstream(req, choices)
 	}
@@ -116,8 +121,7 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var n int64
 	var err error
 	if cacheInfo.canStore {
-		entry := proxy.cache.StoreStart(
-			req.URL.String(), respData.StatusCode, respData.Header)
+		entry := proxy.cache.StoreStart(req.URL.String(), &respData.MetaData)
 		n, err = io.Copy(w, entry.Reader(body))
 		if err != nil {
 			entry.Discard()
@@ -226,7 +230,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 		}
 	}
 
-	// requestTime := time.Now()
+	requestTime := time.Now()
 	upResp, err := proxy.upstream.RoundTrip(upReq)
 	responseTime := time.Now()
 	if err != nil {
@@ -373,6 +377,8 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 					entry.Header[key] = val
 				}
 
+				entry.ResponseTime = responseTime
+				entry.ResponseDelay = responseTime.Sub(requestTime)
 				proxy.cache.Update(req.URL.String(), entry)
 			}
 
@@ -383,8 +389,10 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 
 	return &CacheEntry{
 		MetaData: MetaData{
-			StatusCode: upResp.StatusCode,
-			Header:     upResp.Header,
+			StatusCode:    upResp.StatusCode,
+			Header:        upResp.Header,
+			ResponseTime:  responseTime,
+			ResponseDelay: responseTime.Sub(requestTime),
 		},
 		Source:  "upstream",
 		GetBody: func() io.ReadCloser { return upResp.Body },

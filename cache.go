@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
@@ -31,7 +32,7 @@ type Cache interface {
 	// headers, and status code) is provided as arguments to the
 	// StoreStart call, the response body must be delivered to the
 	// returned StoreCont object.
-	StoreStart(url string, statusCode int, header http.Header) StoreCont
+	StoreStart(url string, meta *MetaData) StoreCont
 
 	// Update exists the metadata of an existing cache entry.
 	Update(url string, entry *CacheEntry)
@@ -43,8 +44,10 @@ type Cache interface {
 }
 
 type MetaData struct {
-	StatusCode int
-	Header     http.Header
+	StatusCode    int
+	Header        http.Header
+	ResponseTime  time.Time
+	ResponseDelay time.Duration
 }
 
 type CacheEntry struct {
@@ -173,11 +176,7 @@ func (cache *ldbCache) Retrieve(req *http.Request) []*CacheEntry {
 	return res
 }
 
-func (cache *ldbCache) StoreStart(url string, status int, header http.Header) StoreCont {
-	meta := &MetaData{
-		StatusCode: status,
-		Header:     header,
-	}
+func (cache *ldbCache) StoreStart(url string, meta *MetaData) StoreCont {
 	metaHash := cache.storeLdbMetaData(meta)
 	if metaHash == nil {
 		return nil
@@ -192,7 +191,7 @@ func (cache *ldbCache) StoreStart(url string, status int, header http.Header) St
 		store:    store,
 		hash:     sha3.NewShake128(),
 		metaHash: metaHash,
-		key:      urlToKey(url, header),
+		key:      urlToKey(url, meta.Header),
 	}
 }
 
