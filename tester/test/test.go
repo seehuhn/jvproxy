@@ -10,9 +10,9 @@ import (
 
 type Test interface {
 	Info() *Info
-	Request() *http.Request
-	Respond(w http.ResponseWriter, req *http.Request)
-	Check(resp *http.Response, err error, serverCalled bool) *Result
+	Request(step int) *http.Request
+	Respond(step int, w http.ResponseWriter, req *http.Request)
+	Check(step int, resp *http.Response, err error, serverCalled bool) *Result
 }
 
 type Breakage uint16

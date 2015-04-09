@@ -24,16 +24,16 @@ func (t *Simple) Info() *Info {
 	}
 }
 
-func (t *Simple) Request() *http.Request {
+func (t *Simple) Request(_ int) *http.Request {
 	req, _ := http.NewRequest("GET", "/", nil)
 	return req
 }
 
-func (t *Simple) Respond(w http.ResponseWriter, req *http.Request) {
+func (t *Simple) Respond(_ int, w http.ResponseWriter, req *http.Request) {
 	w.Write([]byte(t.msg))
 }
 
-func (t *Simple) Check(resp *http.Response, err error, up bool) *Result {
+func (t *Simple) Check(_ int, resp *http.Response, err error, up bool) *Result {
 	res := &Result{
 		Pass: true,
 	}

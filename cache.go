@@ -24,7 +24,7 @@ const hashLen = 32
 
 type Cache interface {
 	// Retrieve returns all cache entries available for a given HTTP request.
-	Retrieve(*http.Request) []*ProxyResponse
+	Retrieve(*http.Request) []*CacheEntry
 
 	// StoreStart initiates the process of storing a new server
 	// response in the cache.  The metadata of the response (url,
@@ -33,14 +33,29 @@ type Cache interface {
 	// returned StoreCont object.
 	StoreStart(url string, statusCode int, header http.Header) StoreCont
 
+	// Update exists the metadata of an existing cache entry.
+	Update(url string, entry *CacheEntry)
+
 	// Close makes sure all persistent data is stored on disk and
 	// frees all resources associated with the cache.  The cache
 	// cannot be used anymore after Close has been called.
 	Close() error
 }
 
+type MetaData struct {
+	StatusCode int
+	Header     http.Header
+}
+
+type CacheEntry struct {
+	MetaData
+	GetBody func() io.ReadCloser
+	CacheID []byte
+	Source  string
+}
+
 // StoreCont objects are used to store a response body in the cache,
-// after the metadata has been stored in the cache using the
+// after the metadata already has been stored in the cache using the
 // Cache.StoreStart() method.
 type StoreCont interface {
 	// Reader returns an io.Reader which stores in the cache what it
@@ -50,14 +65,15 @@ type StoreCont interface {
 	// called.
 	Reader(r io.Reader) io.Reader
 
-	// Commit signals that the server response was received
+	// Commit is used to signal that the server response was received
 	// successfully and that the response body should be committed to
 	// persistent storage.
 	Commit()
 
-	// Discard signals that transfer of the server response was
-	// unsuccessful (i.e. because the connection was interrupted) and
-	// that the data written so far should be discarded.
+	// Discard is used to signal that transfer of the server response
+	// has not been received successfully (i.e. because the connection
+	// was interrupted), and that the data written so far should be
+	// discarded.
 	Discard()
 }
 
@@ -106,23 +122,101 @@ func NewLevelDBCache(baseDir string) (Cache, error) {
 	}, nil
 }
 
-func (cache *ldbCache) getStoreName(hash []byte) string {
-	a := fmt.Sprintf("%02x", hash[0])
-	b := fmt.Sprintf("%x", hash[1:])
-	return filepath.Join(cache.baseDir, a, b)
+func (cache *ldbCache) Close() error {
+	return cache.DB.Close()
 }
 
-func (cache *ldbCache) loadLdbMetaData(hash []byte) *ProxyResponse {
-	res := &ProxyResponse{
-		Source: "cache",
+func (cache *ldbCache) Retrieve(req *http.Request) []*CacheEntry {
+	res := make([]*CacheEntry, 0, 1)
+
+	url := req.URL.String()
+	keyPfx := make([]byte, len(url)+1)
+	copy(keyPfx, url)
+	limits := util.BytesPrefix(keyPfx)
+	iter := cache.DB.NewIterator(limits, nil)
+	defer func() {
+		iter.Release()
+		err := iter.Error()
+		if err != nil {
+			trace.T("jvproxy/cache", trace.PrioError,
+				"error while using levelDB iterator: %s", err.Error())
+		}
+	}()
+	for iter.Next() {
+		key := iter.Key()
+		_, fields, values := keyToUrl(key)
+		if !varyHeadersMatch(fields, values, req.Header) {
+			continue
+		}
+
+		hashes := iter.Value()
+		metaHash := hashes[:hashLen]
+		contentHash := hashes[hashLen:]
+
+		metaData := cache.loadLdbMetaData(metaHash)
+		if metaData == nil {
+			continue
+		}
+
+		entry := &CacheEntry{
+			MetaData: *metaData,
+			GetBody: func() io.ReadCloser {
+				body, _ := os.Open(cache.getStoreName(contentHash))
+				return body
+			},
+			CacheID: contentHash,
+			Source:  "cache",
+		}
+
+		res = append(res, entry)
+	}
+	return res
+}
+
+func (cache *ldbCache) StoreStart(url string, status int, header http.Header) StoreCont {
+	meta := &MetaData{
+		StatusCode: status,
+		Header:     header,
+	}
+	metaHash := cache.storeLdbMetaData(meta)
+	if metaHash == nil {
+		return nil
 	}
 
+	store, err := ioutil.TempFile(cache.newDir, "")
+	if err != nil {
+		panic(err)
+	}
+	return &ldbEntry{
+		cache:    cache,
+		store:    store,
+		hash:     sha3.NewShake128(),
+		metaHash: metaHash,
+		key:      urlToKey(url, header),
+	}
+}
+
+func (cache *ldbCache) Update(url string, entry *CacheEntry) {
+	metaHash := cache.storeLdbMetaData(&entry.MetaData)
+	if metaHash == nil {
+		return
+	}
+
+	key := urlToKey(url, entry.Header)
+	hash := make([]byte, 2*hashLen)
+	copy(hash[:hashLen], metaHash)
+	copy(hash[hashLen:], entry.CacheID)
+	cache.DB.Put(key, hash, nil)
+}
+
+func (cache *ldbCache) loadLdbMetaData(hash []byte) *MetaData {
 	file, err := os.Open(cache.getStoreName(hash))
 	if err != nil {
 		return nil
 	}
 	defer file.Close()
 
+	res := &MetaData{}
 	dec := gob.NewDecoder(file)
 	err = dec.Decode(res)
 	if err != nil {
@@ -132,7 +226,7 @@ func (cache *ldbCache) loadLdbMetaData(hash []byte) *ProxyResponse {
 	return res
 }
 
-func (cache *ldbCache) storeLdbMetaData(m *ProxyResponse) []byte {
+func (cache *ldbCache) storeLdbMetaData(m *MetaData) []byte {
 	buf := bytes.Buffer{}
 	enc := gob.NewEncoder(&buf)
 	err := enc.Encode(m)
@@ -160,8 +254,16 @@ func (cache *ldbCache) storeLdbMetaData(m *ProxyResponse) []byte {
 	return hash
 }
 
+func (cache *ldbCache) getStoreName(hash []byte) string {
+	a := fmt.Sprintf("%02x", hash[0])
+	b := fmt.Sprintf("%x", hash[1:])
+	return filepath.Join(cache.baseDir, a, b)
+}
+
 func urlToKey(url string, header http.Header) []byte {
-	// TODO(voss): check that url contains no '\0' bytes?
+	// TODO(voss): check that url contains no '\0' bytes?  To be safe,
+	// maybe encode strings with leanding length (using the
+	// encoding/binary module)?
 	res := []byte{}
 	res = append(res, []byte(url)...)
 	res = append(res, 0)
@@ -201,72 +303,6 @@ func keyToUrl(key []byte) (url string, fields []string, values []string) {
 		values = append(values, string(value))
 	}
 	return
-}
-
-func (cache *ldbCache) Retrieve(req *http.Request) []*ProxyResponse {
-	res := make([]*ProxyResponse, 0, 1)
-
-	url := req.URL.String()
-	keyPfx := make([]byte, len(url)+1)
-	copy(keyPfx, url)
-	limits := util.BytesPrefix(keyPfx)
-	iter := cache.DB.NewIterator(limits, nil)
-	defer func() {
-		iter.Release()
-		err := iter.Error()
-		if err != nil {
-			trace.T("jvproxy/cache", trace.PrioError,
-				"error while using levelDB iterator: %s", err.Error())
-		}
-	}()
-	for iter.Next() {
-		key := iter.Key()
-		_, fields, values := keyToUrl(key)
-		if !varyHeadersMatch(fields, values, req.Header) {
-			continue
-		}
-
-		hashes := iter.Value()
-		metaHash := hashes[:hashLen]
-		metaData := cache.loadLdbMetaData(metaHash)
-		if metaData == nil {
-			continue
-		}
-		contentHash := hashes[hashLen:]
-		metaData.GetBody = func() io.ReadCloser {
-			body, _ := os.Open(cache.getStoreName(contentHash))
-			return body
-		}
-		res = append(res, metaData)
-	}
-	return res
-}
-
-func (cache *ldbCache) StoreStart(url string, status int, header http.Header) StoreCont {
-	m := &ProxyResponse{
-		StatusCode: status,
-		Header:     header,
-	}
-	metaHash := cache.storeLdbMetaData(m)
-	if metaHash == nil {
-		return nil
-	}
-
-	store, err := ioutil.TempFile(cache.newDir, "")
-	if err != nil {
-		panic(err)
-	}
-	return &ldbEntry{
-		cache:    cache,
-		store:    store,
-		hash:     sha3.NewShake128(),
-		metaHash: metaHash,
-		key:      urlToKey(url, header),
-	}
-}
-
-func (cache *ldbCache) Close() error {
-	return cache.DB.Close()
 }
 
 type ldbEntry struct {
@@ -310,8 +346,14 @@ func (entry *ldbEntry) Commit() {
 		trace.T("jvproxy/cache", trace.PrioDebug,
 			"new cache entry %s", storeName)
 	}
+	// TODO(voss): check for errors different from an existing cache
+	// entry
 
-	entry.cache.DB.Put(entry.key, hash, nil)
+	err = entry.cache.DB.Put(entry.key, hash, nil)
+	if err != nil {
+		trace.T("jvproxy/cache", trace.PrioError,
+			"cannot store cache entry in leveldb: %s", err.Error())
+	}
 }
 
 func (entry *ldbEntry) Discard() {

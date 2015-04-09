@@ -61,15 +61,18 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	cacheInfo := proxy.getCacheability(req)
 
-	var respData *ProxyResponse
+	var respData *CacheEntry
 
 	// step 1: check whether any cached responses are available
-	choices := []*ProxyResponse{}
+	choices := []*CacheEntry{}
 	if cacheInfo.canServeFromCache {
 		choices = proxy.cache.Retrieve(req)
 		if len(choices) > 0 {
 			sort.Sort(byDate(choices))
-			// TODO(voss): is the following what we want?
+
+			// TODO(voss): is the following what we want?  The code in
+			// .requestFromUpstream() seems prepared for there to be
+			// more than one stale response.
 			respData = choices[0]
 		}
 	}
@@ -81,9 +84,10 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// step 3: make sure we still have the body of the selected response
-	if respData != nil && respData.Body == nil {
-		respData.Body = respData.GetBody()
-		if respData.Body == nil {
+	var body io.ReadCloser
+	if respData != nil {
+		body = respData.GetBody()
+		if body == nil {
 			respData = nil
 		}
 	}
@@ -103,17 +107,18 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	copyHeader(h, respData.Header)
 	w.WriteHeader(respData.StatusCode)
 
-	if respData.Body == nil {
-		respData.Body = respData.GetBody()
+	if body == nil {
+		body = respData.GetBody()
 	}
-	defer respData.Body.Close()
+	// TODO(voss): retry if body==nil ?
+	defer body.Close()
 
 	var n int64
 	var err error
 	if cacheInfo.canStore {
 		entry := proxy.cache.StoreStart(
 			req.URL.String(), respData.StatusCode, respData.Header)
-		n, err = io.Copy(w, entry.Reader(respData.Body))
+		n, err = io.Copy(w, entry.Reader(body))
 		if err != nil {
 			entry.Discard()
 		} else {
@@ -121,7 +126,7 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		log.CacheResult = "MISS,STORE"
 	} else {
-		n, err = io.Copy(w, respData.Body)
+		n, err = io.Copy(w, body)
 		if log.CacheResult == "" {
 			log.CacheResult = "MISS,NOSTORE"
 		}
@@ -134,15 +139,7 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// TODO(voss): compare n to the server-provided Content-Length
 }
 
-type ProxyResponse struct {
-	StatusCode int
-	Header     http.Header
-	Source     string
-	Body       io.ReadCloser
-	GetBody    func() io.ReadCloser
-}
-
-type byDate []*ProxyResponse
+type byDate []*CacheEntry
 
 func (x byDate) Len() int      { return len(x) }
 func (x byDate) Swap(i, j int) { x[i], x[j] = x[j], x[i] }
@@ -172,7 +169,7 @@ var perHopHeaders = []string{
 //
 // `stale` must be ordered in order of the Date header field, the
 // newest item first.
-func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*ProxyResponse) *ProxyResponse {
+func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) *CacheEntry {
 	upReq := new(http.Request)
 	*upReq = *req // includes shallow copies of maps, care is needed below ...
 	upReq.Proto = "HTTP/1.1"
@@ -239,11 +236,15 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*ProxyRespons
 		msg := "error: " + err.Error()
 		h := http.Header{}
 		h.Add("Content-Type", "text/plain")
-		return &ProxyResponse{ // TODO(voss): invent error reporting mechanism
-			StatusCode: 555,
-			Header:     h,
-			Source:     "error",
-			Body:       ioutil.NopCloser(strings.NewReader(msg)),
+		return &CacheEntry{ // TODO(voss): invent error reporting mechanism
+			MetaData: MetaData{
+				StatusCode: 555,
+				Header:     h,
+			},
+			Source: "error",
+			GetBody: func() io.ReadCloser {
+				return ioutil.NopCloser(strings.NewReader(msg))
+			},
 		}
 	}
 
@@ -258,7 +259,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*ProxyRespons
 	}
 
 	if upResp.StatusCode == http.StatusNotModified {
-		selected := []*ProxyResponse{}
+		selected := []*CacheEntry{}
 		done := false
 
 		eTag1 := upResp.Header.Get("Etag")
@@ -372,7 +373,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*ProxyRespons
 					entry.Header[key] = val
 				}
 
-				// TODO(voss): save the freshened response in the cache
+				proxy.cache.Update(req.URL.String(), entry)
 			}
 
 			sort.Sort(byDate(selected))
@@ -380,11 +381,13 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*ProxyRespons
 		}
 	}
 
-	return &ProxyResponse{
-		StatusCode: upResp.StatusCode,
-		Header:     upResp.Header,
-		Source:     "upstream",
-		Body:       upResp.Body,
+	return &CacheEntry{
+		MetaData: MetaData{
+			StatusCode: upResp.StatusCode,
+			Header:     upResp.Header,
+		},
+		Source:  "upstream",
+		GetBody: func() io.ReadCloser { return upResp.Body },
 	}
 }
 
@@ -449,7 +452,7 @@ func (proxy *Proxy) getCacheability(req *http.Request) *decision {
 	return res
 }
 
-func (proxy *Proxy) updateCacheability(resp *ProxyResponse, res *decision) {
+func (proxy *Proxy) updateCacheability(resp *CacheEntry, res *decision) {
 	// At this point we already have obtained a new response from the
 	// server: only the .canStore field is still interesting.
 

@@ -8,13 +8,15 @@ import (
 
 type NullCache struct{}
 
-func (cache *NullCache) Retrieve(*http.Request) []*ProxyResponse {
+func (cache *NullCache) Retrieve(*http.Request) []*CacheEntry {
 	return nil
 }
 
 func (cache *NullCache) StoreStart(string, int, http.Header) StoreCont {
 	return &nullEntry{}
 }
+
+func (cache *NullCache) Update(url string, entry *CacheEntry) {}
 
 func (cache *NullCache) Close() error {
 	return nil

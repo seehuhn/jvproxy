@@ -46,6 +46,7 @@ func main() {
 	testRunner.Run(test.NewNoDate())
 
 	// tests relating to caching
+	testRunner.Run(test.NewHasCache())
 
 	testRunner.Run(test.NewNoCache("7234-3.0.a", "XQRL", nil, nil, 200))
 	testRunner.Run(test.NewNoCache("7234-3.0.b", "GET", nil, nil, 713))

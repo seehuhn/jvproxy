@@ -8,9 +8,7 @@ import (
 
 // AuthTest exercises the requirements of RFC7234, section 3.2
 // (Storing Responses to Authenticated Requests).
-type AuthTest struct {
-	count int
-}
+type AuthTest struct{}
 
 func NewAuthTest() *AuthTest {
 	return &AuthTest{}
@@ -24,16 +22,15 @@ func (t *AuthTest) Info() *Info {
 	}
 }
 
-func (t *AuthTest) Request() *http.Request {
+func (t *AuthTest) Request(step int) *http.Request {
 	req, _ := http.NewRequest("GET", "/", nil)
-	t.count++
-	if t.count == 1 {
+	if step == 0 {
 		req.Header.Add("Authorization", "secret")
 	}
 	return req
 }
 
-func (t *AuthTest) Respond(w http.ResponseWriter, req *http.Request) {
+func (t *AuthTest) Respond(_ int, w http.ResponseWriter, req *http.Request) {
 	if req.Header.Get("Authorization") == "secret" {
 		w.Write([]byte("allowed"))
 	} else {
@@ -41,7 +38,7 @@ func (t *AuthTest) Respond(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (t *AuthTest) Check(resp *http.Response, err error, up bool) *Result {
+func (t *AuthTest) Check(step int, resp *http.Response, err error, up bool) *Result {
 	res := &Result{
 		Pass: true,
 	}
@@ -64,7 +61,7 @@ func (t *AuthTest) Check(resp *http.Response, err error, up bool) *Result {
 	}
 	received := string(data)
 
-	if t.count > 1 {
+	if step > 0 {
 		expected := "denied"
 		if !up {
 			res.Pass = false

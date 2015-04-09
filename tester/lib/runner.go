@@ -83,7 +83,7 @@ func (run *TestRunner) Run(t test.Test) bool {
 	}
 	path := "/" + test.UniqueString(32)
 	for i := 0; i < testInfo.Repeat && !entry.TestFail && !entry.ProxyFail; i++ {
-		run.doRun(t, path, entry)
+		run.doRun(i, t, path, entry)
 	}
 	run.log <- entry
 
@@ -96,8 +96,8 @@ func (run *TestRunner) Run(t test.Test) bool {
 	return !entry.ProxyFail
 }
 
-func (run *TestRunner) doRun(t test.Test, path string, entry *LogEntry) {
-	req := t.Request()
+func (run *TestRunner) doRun(step int, t test.Test, path string, entry *LogEntry) {
+	req := t.Request(step)
 	if req == nil {
 		entry.Messages = append(entry.Messages,
 			"failed to construct request")
@@ -118,8 +118,10 @@ func (run *TestRunner) doRun(t test.Test, path string, entry *LogEntry) {
 
 		timeResp := make(chan times, 1)
 		handler <- &serverHint{
-			path:     path,
-			handler:  t.Respond,
+			path: path,
+			handler: func(w http.ResponseWriter, req *http.Request) {
+				t.Respond(step, w, req)
+			},
 			timeResp: timeResp,
 		}
 
@@ -146,7 +148,7 @@ func (run *TestRunner) doRun(t test.Test, path string, entry *LogEntry) {
 			entry.ReqTime = serverTimes.start.Sub(sendTime)
 			entry.RespTime = recvTime.Sub(serverTimes.stop)
 		}
-		testResult := t.Check(resp, err, serverCalled)
+		testResult := t.Check(step, resp, err, serverCalled)
 		entry.ProxyFail = !testResult.Pass
 		entry.Messages = append(entry.Messages, testResult.Messages...)
 		run.Detected |= testResult.Detected

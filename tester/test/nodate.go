@@ -27,16 +27,16 @@ func (t *NoDate) Info() *Info {
 	}
 }
 
-func (t *NoDate) Request() *http.Request {
+func (t *NoDate) Request(_ int) *http.Request {
 	req, _ := http.NewRequest("GET", "/", nil)
 	return req
 }
 
-func (t *NoDate) Respond(w http.ResponseWriter, req *http.Request) {
+func (t *NoDate) Respond(_ int, w http.ResponseWriter, req *http.Request) {
 	w.Write([]byte(t.msg))
 }
 
-func (t *NoDate) Check(resp *http.Response, err error, up bool) *Result {
+func (t *NoDate) Check(_ int, resp *http.Response, err error, up bool) *Result {
 	res := &Result{
 		Pass: true,
 	}

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-type Validate struct {
+type CacheUpdate struct {
 	lastModified time.Time
 	expires      time.Time
 
@@ -17,8 +17,8 @@ type Validate struct {
 	body  string
 }
 
-func NewValidate() *Validate {
-	return &Validate{
+func NewCacheUpdate() *CacheUpdate {
+	return &CacheUpdate{
 		lastModified: time.Now().Add(-50 * time.Hour),
 
 		eTag:  "\"match\"",
@@ -27,26 +27,26 @@ func NewValidate() *Validate {
 	}
 }
 
-func (t *Validate) Info() *Info {
+func (t *CacheUpdate) Info() *Info {
 	return &Info{
-		Name:   "Validate",
-		Repeat: 2,
+		Name:   "CacheUpdate",
+		Repeat: 3,
 	}
 }
 
-func (t *Validate) Request(_ int) *http.Request {
+func (t *CacheUpdate) Request(_ int) *http.Request {
 	req, _ := http.NewRequest("GET", "/", nil)
 	return req
 }
 
-func (t *Validate) Respond(step int, w http.ResponseWriter, req *http.Request) {
+func (t *CacheUpdate) Respond(step int, w http.ResponseWriter, req *http.Request) {
 	t.expires = time.Now().Add(-5 * time.Minute)
 
 	h := w.Header()
 	h.Set("Last-Modified", t.lastModified.Format(time.RFC1123))
 	h.Set("Expires", t.expires.Format(time.RFC1123))
 	h.Set("Etag", t.eTag)
-	h.Set("X-Validate", strconv.Itoa(step))
+	h.Set("X-CacheUpdate", strconv.Itoa(step))
 
 	inm := req.Header.Get("If-None-Match")
 	eMatch := inm == "*"
@@ -69,7 +69,7 @@ func (t *Validate) Respond(step int, w http.ResponseWriter, req *http.Request) {
 	w.Write([]byte(t.body))
 }
 
-func (t *Validate) Check(_ int, resp *http.Response, err error, up bool) *Result {
+func (t *CacheUpdate) Check(step int, resp *http.Response, err error, up bool) *Result {
 	res := &Result{
 		Pass: true,
 	}
