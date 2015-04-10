@@ -107,7 +107,7 @@ func (run *TestRunner) doRun(step int, t test.Test, path string, entry *LogEntry
 		var handler chan *serverHint
 		breakage := t.Info().Server
 		if breakage != 0 {
-			entry.Messages = append(entry.Messages, "using special server")
+			entry.Messages = append(entry.Messages, "test uses special server")
 			req.URL.Host = run.specialAddr
 			handler = run.special.handler
 		} else {

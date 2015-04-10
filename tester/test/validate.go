@@ -3,27 +3,20 @@ package test
 import (
 	"io/ioutil"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
 
 type Validate struct {
-	lastModified time.Time
-	expires      time.Time
-
-	eTag  string
-	extra string
-	body  string
+	eTag          string
+	body          string
+	didRevalidate bool
 }
 
 func NewValidate() *Validate {
 	return &Validate{
-		lastModified: time.Now().Add(-50 * time.Hour),
-
-		eTag:  "\"match\"",
-		extra: UniqueString(8),
-		body:  UniqueString(64),
+		eTag: "\"match\"",
+		body: UniqueString(64),
 	}
 }
 
@@ -34,21 +27,25 @@ func (t *Validate) Info() *Info {
 	}
 }
 
-func (t *Validate) Request(_ int) *http.Request {
+func (t *Validate) Request(int) *http.Request {
 	req, _ := http.NewRequest("GET", "/", nil)
 	return req
 }
 
-func (t *Validate) Respond(step int, w http.ResponseWriter, req *http.Request) {
-	t.expires = time.Now().Add(-5 * time.Minute)
+func (t *Validate) Respond(_ int, w http.ResponseWriter, req *http.Request) {
+	now := time.Now()
+	lastModified := now.Add(-1 * time.Hour)
+	expires := now.Add(-1 * time.Second)
 
 	h := w.Header()
-	h.Set("Last-Modified", t.lastModified.Format(time.RFC1123))
-	h.Set("Expires", t.expires.Format(time.RFC1123))
+	h.Set("Last-Modified", lastModified.Format(time.RFC1123))
+	h.Set("Expires", expires.Format(time.RFC1123))
 	h.Set("Etag", t.eTag)
-	h.Set("X-Validate", strconv.Itoa(step))
 
 	inm := req.Header.Get("If-None-Match")
+	if inm != "" {
+		t.didRevalidate = true
+	}
 	eMatch := inm == "*"
 	if inm != "" && !eMatch {
 		for _, word := range strings.Split(inm, ",") {
@@ -64,8 +61,6 @@ func (t *Validate) Respond(step int, w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	h.Set("X-Extra", t.extra)
-	h.Set("X-Version", strconv.Itoa(step))
 	w.Write([]byte(t.body))
 }
 
@@ -93,15 +88,16 @@ func (t *Validate) Check(_ int, resp *http.Response, err error, up bool) *Result
 	body := string(bodyData)
 
 	eTag := resp.Header.Get("Etag")
-	if !up {
-		res.Pass = false
-		res.Messages = append(res.Messages, "proxy didn't contact server")
-	} else if eTag != t.eTag {
+	if eTag != t.eTag {
 		res.Pass = false
 		res.Messages = append(res.Messages, "wrong Etag")
 	} else if body != t.body {
 		res.Pass = false
 		res.Messages = append(res.Messages, "wrong Body")
+	}
+	if t.didRevalidate {
+		res.Messages = append(res.Messages, "revalidation detected")
+		res.Detected |= DoesRevalidate
 	}
 
 	return res
