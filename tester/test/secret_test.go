@@ -1,7 +1,6 @@
 package test
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -24,7 +23,5 @@ func TestUniqueString(t *testing.T) {
 		if u1 == u2 {
 			t.Errorf("path %q not unique", u1)
 		}
-		fmt.Println(u1)
-		fmt.Println(u2)
 	}
 }
