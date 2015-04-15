@@ -1,26 +1,19 @@
-package lib
+package main
 
 import (
 	"fmt"
+	"github.com/seehuhn/jvproxy/tester/test"
 	"time"
 )
 
-type LogEntry struct {
-	Name                         string
-	ProxyFail                    bool
-	TestFail                     bool
-	Messages                     []string
-	TotalTime, ReqTime, RespTime time.Duration
-}
-
 type Logger struct {
-	Submit  chan<- *LogEntry
-	receive <-chan *LogEntry
+	Submit  chan<- *test.LogEntry
+	receive <-chan *test.LogEntry
 	done    chan struct{}
 }
 
 func NewLogger() *Logger {
-	c := make(chan *LogEntry)
+	c := make(chan *test.LogEntry)
 	res := &Logger{
 		Submit:  c,
 		receive: c,
@@ -40,8 +33,6 @@ func (log *Logger) listen() {
 		if entry.TestFail {
 			fmt.Print("\n\n*** test failed ***\n")
 			fmt.Println("TEST FAILURE", entry.Name)
-		} else if entry.ProxyFail {
-			fmt.Println("FAIL", entry.Name)
 		} else {
 			q := float64(time.Millisecond)
 			fmt.Printf(".... %-32s %8.2fms %8.2fms %8.2fms\n", entry.Name,

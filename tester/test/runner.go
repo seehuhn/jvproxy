@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
+	"runtime"
 	"time"
 )
 
@@ -61,14 +63,17 @@ func (run *Runner) Close() error {
 	return run.normalListener.Close()
 }
 
-func (run *Runner) Run(name string, test Case, args ...interface{}) {
+func (run *Runner) Run(test Case, args ...interface{}) {
 	log := &LogEntry{}
-	log.Name = name
+	fptr := reflect.ValueOf(test).Pointer()
+	log.Name = runtime.FuncForPC(fptr).Name()
 	defer func() {
 		if r := recover(); r != nil {
 			if msg, ok := r.(brokenTest); ok {
 				log.Messages = append(log.Messages,
 					"BROKEN TEST: "+string(msg))
+			} else if msg, ok := r.(testFailure); ok {
+				log.Messages = append(log.Messages, string(msg))
 			} else {
 				panic(r)
 			}
@@ -78,10 +83,9 @@ func (run *Runner) Run(name string, test Case, args ...interface{}) {
 	}()
 
 	proxy := &helper{
-		name:   name,
 		runner: run,
 		log:    log,
-		path:   "/" + name + "/" + UniqueString(16),
+		path:   "/" + log.Name + "/" + UniqueString(16),
 	}
 	defer proxy.release()
 

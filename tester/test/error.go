@@ -8,3 +8,5 @@ var exMissingResponse = brokenTest("missing call to ForwardResponse")
 type brokenProxy string
 
 var exWrongPath = brokenProxy("wrong request path forwarded")
+
+type testFailure string

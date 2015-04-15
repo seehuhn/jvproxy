@@ -18,7 +18,7 @@ func specialTestTest(h Helper, args ...interface{}) {
 func TestSpecialServer(t *testing.T) {
 	log := make(chan *LogEntry, 1)
 	runner := NewRunner(nil, log)
-	runner.Run("specialTestTest", specialTestTest, t)
+	runner.Run(specialTestTest, t)
 	res := <-log
 
 	if len(res.Messages) < 1 || res.Messages[0] != specialServerMessage {

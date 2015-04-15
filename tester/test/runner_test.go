@@ -7,14 +7,14 @@ import (
 
 func trivialTestTest(h Helper, _ ...interface{}) {
 	req := h.NewRequest("GET", Normal)
-	_, req = h.ForwardRequest(req)
+	h.ForwardRequest(req)
 	h.ForwardResponse()
 }
 
 func TestRunner(t *testing.T) {
 	log := make(chan *LogEntry, 1)
 	runner := NewRunner(nil, log)
-	runner.Run("trivalTestTest", trivialTestTest)
+	runner.Run(trivialTestTest)
 	res := <-log
 
 	if len(res.Messages) > 0 {
@@ -36,10 +36,10 @@ func missingResponseTestTest(h Helper, _ ...interface{}) {
 	h.ForwardRequest(req)
 }
 
-func TestMissingResponse(t *testing.T) {
+func TestMissingResponseTest(t *testing.T) {
 	log := make(chan *LogEntry, 1)
 	runner := NewRunner(nil, log)
-	runner.Run("missingResponseTestTest", missingResponseTestTest)
+	runner.Run(missingResponseTestTest)
 	entry := <-log
 	if !strings.HasSuffix(entry.Messages[0], string(exMissingResponse)) {
 		t.Fatalf("missing response not detected: %s",
@@ -56,10 +56,10 @@ func missingRequestTestTest(h Helper, _ ...interface{}) {
 	h.ForwardResponse()
 }
 
-func TestMissingRequest(t *testing.T) {
+func TestMissingRequestTest(t *testing.T) {
 	log := make(chan *LogEntry, 1)
 	runner := NewRunner(nil, log)
-	runner.Run("missingRequestTestTest", missingRequestTestTest)
+	runner.Run(missingRequestTestTest)
 	entry := <-log
 	if !strings.HasSuffix(entry.Messages[0], string(exMissingRequest)) {
 		t.Fatalf("missing request not detected: %s",
@@ -69,5 +69,23 @@ func TestMissingRequest(t *testing.T) {
 	err := runner.Close()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func failTestTest(h Helper, args ...interface{}) {
+	t := args[0].(*testing.T)
+	msg := args[1].(string)
+	h.Fail(msg)
+	t.Error("Helper.Fail() did not abort test case")
+}
+
+func TestFailTest(t *testing.T) {
+	msg := "test fail message"
+	log := make(chan *LogEntry, 1)
+	runner := NewRunner(nil, log)
+	runner.Run(failTestTest, t, msg)
+	entry := <-log
+	if len(entry.Messages) != 1 || entry.Messages[0] != msg {
+		t.Error("missing test failure message")
 	}
 }

@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"github.com/seehuhn/jvproxy/tester/lib"
 	"github.com/seehuhn/jvproxy/tester/test"
-	"net/http"
 	"net/url"
-	"os"
 	"strings"
 )
 
@@ -30,53 +28,55 @@ func main() {
 		panic(err)
 	}
 
-	log := lib.NewLogger()
+	log := NewLogger()
 	defer log.Close()
-	testRunner := lib.NewTestRunner(proxy, log.Submit)
+	testRunner := test.NewRunner(proxy, log.Submit)
 
-	// test whether the proxy can be reached
-	ok := testRunner.Run(test.NewSimple())
-	if !ok {
-		log.Close()
-		fmt.Fprint(os.Stderr, "proxy failed, aborting ...\n")
-		os.Exit(1)
-	}
+	testRunner.Run(lib.Simple)
 
-	// tests relating to general proxy operations
-	testRunner.Run(test.NewNoDate())
+	// // test whether the proxy can be reached
+	// ok := testRunner.Run(test.NewSimple())
+	// if !ok {
+	//	log.Close()
+	//	fmt.Fprint(os.Stderr, "proxy failed, aborting ...\n")
+	//	os.Exit(1)
+	// }
 
-	// tests relating to caching
-	testRunner.Run(test.NewHasCache())
+	// // tests relating to general proxy operations
+	// testRunner.Run(test.NewNoDate())
 
-	testRunner.Run(test.NewNoCache("7234-3.0.a", "XQRL", nil, nil, 200))
-	testRunner.Run(test.NewNoCache("7234-3.0.b", "GET", nil, nil, 713))
-	h := http.Header{}
-	h.Add("Cache-Control", "no-store")
-	testRunner.Run(test.NewNoCache("7234-3.0.c-req", "GET", h, nil, 200))
-	testRunner.Run(test.NewNoCache("7234-3.0.c-resp", "GET", nil, h, 200))
-	if !*privateCacheFlag {
-		h = http.Header{}
-		h.Add("Cache-Control", "private")
-		testRunner.Run(test.NewNoCache("7234-3.0.d", "GET", nil, h, 200))
+	// // tests relating to caching
+	// testRunner.Run(test.NewHasCache())
 
-		h = http.Header{}
-		h.Add("Authorization", "secret")
-		testRunner.Run(test.NewNoCache("7234-3.0.e", "GET", h, nil, 200))
-	}
-	// TODO(voss): codes 100, 101, 304?
-	for _, code := range []int{201, 202, 205, 302, 303, 305, 307, 400, 401,
-		402, 403, 406, 407, 408, 409, 411, 412, 413, 415, 416, 417, 426, 500,
-		502, 503, 504, 505} {
-		name := fmt.Sprintf("7234-3.0.f5-%d", code)
-		testRunner.Run(test.NewNoCache(name, "GET", nil, nil, code))
-	}
+	// testRunner.Run(test.NewNoCache("7234-3.0.a", "XQRL", nil, nil, 200))
+	// testRunner.Run(test.NewNoCache("7234-3.0.b", "GET", nil, nil, 713))
+	// h := http.Header{}
+	// h.Add("Cache-Control", "no-store")
+	// testRunner.Run(test.NewNoCache("7234-3.0.c-req", "GET", h, nil, 200))
+	// testRunner.Run(test.NewNoCache("7234-3.0.c-resp", "GET", nil, h, 200))
+	// if !*privateCacheFlag {
+	//	h = http.Header{}
+	//	h.Add("Cache-Control", "private")
+	//	testRunner.Run(test.NewNoCache("7234-3.0.d", "GET", nil, h, 200))
 
-	testRunner.Run(test.NewAuthTest())
+	//	h = http.Header{}
+	//	h.Add("Authorization", "secret")
+	//	testRunner.Run(test.NewNoCache("7234-3.0.e", "GET", h, nil, 200))
+	// }
+	// // TODO(voss): codes 100, 101, 304?
+	// for _, code := range []int{201, 202, 205, 302, 303, 305, 307, 400, 401,
+	//	402, 403, 406, 407, 408, 409, 411, 412, 413, 415, 416, 417, 426, 500,
+	//	502, 503, 504, 505} {
+	//	name := fmt.Sprintf("7234-3.0.f5-%d", code)
+	//	testRunner.Run(test.NewNoCache(name, "GET", nil, nil, code))
+	// }
 
-	h = http.Header{}
-	h.Add("Cache-Control", "public")
-	h.Add("Expires", "Thu, 01 Dec 1994 16:00:00 GMT")
-	testRunner.Run(test.NewNoCache("7234-4.0f1", "GET", nil, h, 200))
+	// testRunner.Run(test.NewAuthTest())
 
-	testRunner.Run(test.NewValidate())
+	// h = http.Header{}
+	// h.Add("Cache-Control", "public")
+	// h.Add("Expires", "Thu, 01 Dec 1994 16:00:00 GMT")
+	// testRunner.Run(test.NewNoCache("7234-4.0f1", "GET", nil, h, 200))
+
+	// testRunner.Run(test.NewValidate())
 }

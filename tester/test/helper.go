@@ -27,7 +27,6 @@ const (
 )
 
 type helper struct {
-	name   string
 	runner *Runner
 	log    *LogEntry
 	path   string
@@ -40,6 +39,13 @@ type helper struct {
 	lastResponseTime  time.Time
 	lastResponse      *http.Response
 	lastResponseError error
+
+	reqDurations        []time.Duration
+	reqDurationsCount   int
+	respDurations       []time.Duration
+	respDurationsCount  int
+	cacheDurations      []time.Duration
+	cacheDurationsCount int
 
 	waitForServer <-chan bool
 }
@@ -139,7 +145,7 @@ func (h *helper) Log(format string, a ...interface{}) {
 
 func (h *helper) Fail(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	panic(msg)
+	panic(testFailure(msg))
 }
 
 func (h *helper) release() {
