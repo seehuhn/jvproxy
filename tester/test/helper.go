@@ -98,16 +98,22 @@ func (h *helper) ForwardRequest(req *http.Request) (http.ResponseWriter, *http.R
 	return h.lastRequest.w, req
 }
 
-func (h *helper) ForwardResponse() *http.Response {
-	if h.waitForServer != nil {
+func (h *helper) completeRequest() {
+	if h.lastRequest != nil {
 		h.lastBody = UniqueString(64)
 		h.times[len(h.times)-1].ResponseSent = time.Now()
 		h.lastRequest.w.Write([]byte(h.lastBody))
 		close(h.lastRequest.done)
 
 		<-h.waitForServer
-		h.lastRequest = nil
 		h.waitForServer = nil
+		h.lastRequest = nil
+	}
+}
+
+func (h *helper) ForwardResponse() *http.Response {
+	if h.lastRequest != nil {
+		h.completeRequest()
 	}
 
 	err := h.lastResponseError
@@ -158,13 +164,6 @@ func (h *helper) SetInfo(name, RFC string) {
 	}
 	if RFC != "" {
 		h.log.Name += " [RFC" + RFC + "]"
-	}
-}
-
-func (h *helper) release() {
-	if h.lastRequest != nil {
-		close(h.lastRequest.done)
-		panic(exMissingResponse)
 	}
 }
 

@@ -88,7 +88,7 @@ func (run *Runner) Run(test Case, args ...interface{}) (pass bool) {
 		pass = !log.TestFail
 	}()
 
-	defer proxy.release()
+	defer proxy.completeRequest()
 
 	test(proxy, args...)
 
