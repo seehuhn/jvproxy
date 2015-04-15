@@ -7,15 +7,10 @@ import (
 	"net/url"
 	"reflect"
 	"runtime"
-	"time"
+	"strings"
 )
 
-type requestFromProxy struct {
-	time time.Time
-	w    http.ResponseWriter
-	req  *http.Request
-	done chan<- bool
-}
+const testPrefix = "github.com/seehuhn/jvproxy/tester/lib."
 
 type Runner struct {
 	log chan<- *LogEntry
@@ -63,10 +58,19 @@ func (run *Runner) Close() error {
 	return run.normalListener.Close()
 }
 
-func (run *Runner) Run(test Case, args ...interface{}) {
+func (run *Runner) Run(test Case, args ...interface{}) (pass bool) {
 	log := &LogEntry{}
 	fptr := reflect.ValueOf(test).Pointer()
 	log.Name = runtime.FuncForPC(fptr).Name()
+	if strings.HasPrefix(log.Name, testPrefix) {
+		log.Name = log.Name[len(testPrefix):]
+	}
+	proxy := &helper{
+		runner: run,
+		log:    log,
+		path:   "/" + log.Name + "/" + UniqueString(16),
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			if msg, ok := r.(brokenTest); ok {
@@ -79,26 +83,14 @@ func (run *Runner) Run(test Case, args ...interface{}) {
 			}
 			log.TestFail = true
 		}
+		log.setTimes(proxy.times)
 		run.log <- log
+		pass = !log.TestFail
 	}()
 
-	proxy := &helper{
-		runner: run,
-		log:    log,
-		path:   "/" + log.Name + "/" + UniqueString(16),
-	}
 	defer proxy.release()
 
 	test(proxy, args...)
-}
 
-func (run *Runner) serveHTTP(w http.ResponseWriter, req *http.Request) {
-	done := make(chan bool)
-	run.server <- &requestFromProxy{
-		time: time.Now(),
-		w:    w,
-		req:  req,
-		done: done,
-	}
-	<-done
+	return
 }

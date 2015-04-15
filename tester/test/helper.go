@@ -15,6 +15,8 @@ type Helper interface {
 
 	Log(format string, a ...interface{})
 	Fail(format string, a ...interface{})
+
+	SetInfo(name, RFC string)
 }
 
 const specialServerMessage = "using special server"
@@ -33,21 +35,20 @@ type helper struct {
 
 	lastBody string
 
-	lastRequestTime time.Time
-	lastRequest     *requestFromProxy
-
-	lastResponseTime  time.Time
+	lastRequest       *requestFromProxy
 	lastResponse      *http.Response
 	lastResponseError error
 
-	reqDurations        []time.Duration
-	reqDurationsCount   int
-	respDurations       []time.Duration
-	respDurationsCount  int
-	cacheDurations      []time.Duration
-	cacheDurationsCount int
+	times []timeStamps
 
 	waitForServer <-chan bool
+}
+
+type timeStamps struct {
+	RequestSent      time.Time
+	RequestReceived  time.Time
+	ResponseSent     time.Time
+	ResponseReceived time.Time
 }
 
 func (h *helper) NewRequest(method string, tp serverType) *http.Request {
@@ -72,6 +73,7 @@ func (h *helper) ForwardRequest(req *http.Request) (http.ResponseWriter, *http.R
 	if h.lastRequest != nil {
 		panic(exMissingResponse)
 	}
+	h.times = append(h.times, timeStamps{})
 
 	waitForServer := make(chan bool, 1)
 	go h.client(req, waitForServer)
@@ -81,6 +83,7 @@ func (h *helper) ForwardRequest(req *http.Request) (http.ResponseWriter, *http.R
 		// The proxy contacted the server.
 		h.waitForServer = waitForServer
 		h.lastRequest = s
+		h.times[len(h.times)-1].RequestReceived = s.time
 	case <-waitForServer:
 		// The proxy did not contact the server.
 		h.waitForServer = nil
@@ -98,6 +101,7 @@ func (h *helper) ForwardRequest(req *http.Request) (http.ResponseWriter, *http.R
 func (h *helper) ForwardResponse() *http.Response {
 	if h.waitForServer != nil {
 		h.lastBody = UniqueString(64)
+		h.times[len(h.times)-1].ResponseSent = time.Now()
 		h.lastRequest.w.Write([]byte(h.lastBody))
 		close(h.lastRequest.done)
 
@@ -148,6 +152,15 @@ func (h *helper) Fail(format string, a ...interface{}) {
 	panic(testFailure(msg))
 }
 
+func (h *helper) SetInfo(name, RFC string) {
+	if name != "" {
+		h.log.Name = name
+	}
+	if RFC != "" {
+		h.log.Name += " [RFC" + RFC + "]"
+	}
+}
+
 func (h *helper) release() {
 	if h.lastRequest != nil {
 		close(h.lastRequest.done)
@@ -158,9 +171,9 @@ func (h *helper) release() {
 func (h *helper) client(req *http.Request, waitForServer chan<- bool) {
 	trace.T("jvproxy/tester", trace.PrioDebug,
 		"requesting %s via proxy", req.URL)
-	h.lastRequestTime = time.Now()
+	h.times[len(h.times)-1].RequestSent = time.Now()
 	resp, err := h.runner.transport.RoundTrip(req)
-	h.lastResponseTime = time.Now()
+	h.times[len(h.times)-1].ResponseReceived = time.Now()
 	if resp != nil {
 		trace.T("jvproxy/tester", trace.PrioVerbose,
 			"proxy response received: %s", resp.Status)

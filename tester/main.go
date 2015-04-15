@@ -6,6 +6,7 @@ import (
 	"github.com/seehuhn/jvproxy/tester/lib"
 	"github.com/seehuhn/jvproxy/tester/test"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -32,21 +33,19 @@ func main() {
 	defer log.Close()
 	testRunner := test.NewRunner(proxy, log.Submit)
 
-	testRunner.Run(lib.Simple)
+	// test whether the proxy can be reached
+	ok := testRunner.Run(lib.Simple)
+	if !ok {
+		log.Close()
+		fmt.Fprint(os.Stderr, "proxy failed, aborting ...\n")
+		os.Exit(1)
+	}
 
-	// // test whether the proxy can be reached
-	// ok := testRunner.Run(test.NewSimple())
-	// if !ok {
-	//	log.Close()
-	//	fmt.Fprint(os.Stderr, "proxy failed, aborting ...\n")
-	//	os.Exit(1)
-	// }
+	// tests relating to general proxy operations
+	testRunner.Run(lib.NoDate)
 
-	// // tests relating to general proxy operations
-	// testRunner.Run(test.NewNoDate())
-
-	// // tests relating to caching
-	// testRunner.Run(test.NewHasCache())
+	// tests relating to caching
+	testRunner.Run(lib.HasCache)
 
 	// testRunner.Run(test.NewNoCache("7234-3.0.a", "XQRL", nil, nil, 200))
 	// testRunner.Run(test.NewNoCache("7234-3.0.b", "GET", nil, nil, 713))

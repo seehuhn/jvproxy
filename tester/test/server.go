@@ -43,6 +43,24 @@ func getListener() (listener net.Listener) {
 	panic("cannot listen on " + *serveAddr + ": " + err.Error())
 }
 
+type requestFromProxy struct {
+	time time.Time
+	w    http.ResponseWriter
+	req  *http.Request
+	done chan<- bool
+}
+
+func (run *Runner) serveHTTP(w http.ResponseWriter, req *http.Request) {
+	done := make(chan bool)
+	run.server <- &requestFromProxy{
+		time: time.Now(),
+		w:    w,
+		req:  req,
+		done: done,
+	}
+	<-done
+}
+
 func serveSpecial(listener net.Listener, handler http.Handler) {
 	var tempDelay time.Duration // how long to sleep on accept failure
 	for {
