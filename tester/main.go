@@ -79,5 +79,6 @@ func main() {
 	h.Add("Expires", "Thu, 01 Dec 1994 16:00:00 GMT")
 	testRunner.Run(lib.NoCache, "7234-4.0f1", "GET", noHeaders, h, 200)
 
-	// testRunner.Run(lib.Validate())
+	// tests relating to validation of stale responses
+	testRunner.Run(lib.HasValidate)
 }

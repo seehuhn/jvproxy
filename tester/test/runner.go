@@ -73,15 +73,19 @@ func (run *Runner) Run(test Case, args ...interface{}) (pass bool) {
 
 	defer func() {
 		if r := recover(); r != nil {
+			fail := true
 			if msg, ok := r.(brokenTest); ok {
 				log.Messages = append(log.Messages,
 					"BROKEN TEST: "+string(msg))
 			} else if msg, ok := r.(testFailure); ok {
 				log.Messages = append(log.Messages, string(msg))
+			} else if msg, ok := r.(testSuccess); ok {
+				log.Messages = append(log.Messages, string(msg))
+				fail = false
 			} else {
 				panic(r)
 			}
-			log.TestFail = true
+			log.TestFail = log.TestFail || fail
 		}
 		log.setTimes(proxy.times)
 		run.log <- log

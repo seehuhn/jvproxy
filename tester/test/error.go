@@ -10,3 +10,4 @@ type brokenProxy string
 var exWrongPath = brokenProxy("wrong request path forwarded")
 
 type testFailure string
+type testSuccess string

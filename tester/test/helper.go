@@ -15,6 +15,7 @@ type Helper interface {
 
 	Log(format string, a ...interface{})
 	Fail(format string, a ...interface{})
+	Pass(format string, a ...interface{})
 
 	SetInfo(name, RFC string)
 }
@@ -151,6 +152,11 @@ func (h *helper) ForwardResponse() *http.Response {
 func (h *helper) Log(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
 	h.log.Messages = append(h.log.Messages, msg)
+}
+
+func (h *helper) Pass(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	panic(testSuccess(msg))
 }
 
 func (h *helper) Fail(format string, a ...interface{}) {
