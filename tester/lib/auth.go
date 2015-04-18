@@ -13,17 +13,17 @@ func AuthTest(h test.Helper, _ ...interface{}) {
 
 	req := h.NewRequest("GET", test.Normal)
 	req.Header.Add("Authorization", secret)
-	_, req = h.ForwardRequest(req)
+	_, req = h.SendRequestToServer(req)
 	if req.Header.Get("Authorization") != secret {
 		h.Fail("wrong/missing Authorization header")
 	}
-	h.ForwardResponse()
+	h.SendResponseToClient()
 
 	req = h.NewRequest("GET", test.Normal)
-	_, req = h.ForwardRequest(req)
+	_, req = h.SendRequestToServer(req)
 	if req == nil {
 		h.Fail("proxy did not revalidate authenticated response")
 	}
 
-	h.ForwardResponse()
+	h.SendResponseToClient()
 }

@@ -10,8 +10,8 @@ import (
 
 type Helper interface {
 	NewRequest(method string, tp serverType) *http.Request
-	ForwardRequest(*http.Request) (http.ResponseWriter, *http.Request)
-	ForwardResponse() *http.Response
+	SendRequestToServer(*http.Request) (http.ResponseWriter, *http.Request)
+	SendResponseToClient() *http.Response
 
 	Log(format string, a ...interface{})
 	Fail(format string, a ...interface{})
@@ -70,7 +70,7 @@ func (h *helper) NewRequest(method string, tp serverType) *http.Request {
 	return req
 }
 
-func (h *helper) ForwardRequest(req *http.Request) (http.ResponseWriter, *http.Request) {
+func (h *helper) SendRequestToServer(req *http.Request) (http.ResponseWriter, *http.Request) {
 	if h.lastRequest != nil {
 		panic(exMissingResponse)
 	}
@@ -112,7 +112,7 @@ func (h *helper) completeRequest() {
 	}
 }
 
-func (h *helper) ForwardResponse() *http.Response {
+func (h *helper) SendResponseToClient() *http.Response {
 	if h.lastRequest != nil {
 		h.completeRequest()
 	}

@@ -7,8 +7,8 @@ import (
 
 func trivialTestTest(h Helper, _ ...interface{}) {
 	req := h.NewRequest("GET", Normal)
-	h.ForwardRequest(req)
-	h.ForwardResponse()
+	h.SendRequestToServer(req)
+	h.SendResponseToClient()
 }
 
 func TestRunner(t *testing.T) {
@@ -32,8 +32,8 @@ func TestRunner(t *testing.T) {
 
 func missingResponseTestTest(h Helper, _ ...interface{}) {
 	req := h.NewRequest("GET", Normal)
-	h.ForwardRequest(req)
-	h.ForwardRequest(req)
+	h.SendRequestToServer(req)
+	h.SendRequestToServer(req)
 }
 
 func TestMissingResponseTest(t *testing.T) {
@@ -53,7 +53,7 @@ func TestMissingResponseTest(t *testing.T) {
 }
 
 func missingRequestTestTest(h Helper, _ ...interface{}) {
-	h.ForwardResponse()
+	h.SendResponseToClient()
 }
 
 func TestMissingRequestTest(t *testing.T) {

@@ -12,8 +12,8 @@ import (
 func NoDate(h test.Helper, _ ...interface{}) {
 	h.SetInfo("", "7231-7.1.1.2")
 	req := h.NewRequest("GET", test.Special)
-	h.ForwardRequest(req)
-	resp := h.ForwardResponse()
+	h.SendRequestToServer(req)
+	resp := h.SendResponseToClient()
 
 	if len(resp.Header["Date"]) == 0 {
 		h.Fail("proxy failed to add missing date header")

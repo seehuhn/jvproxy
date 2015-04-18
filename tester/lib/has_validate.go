@@ -9,7 +9,7 @@ func HasValidate(h test.Helper, _ ...interface{}) {
 	eTag := "\"" + test.UniqueString(16) + "\""
 
 	req := h.NewRequest("GET", test.Normal)
-	w, _ := h.ForwardRequest(req)
+	w, _ := h.SendRequestToServer(req)
 
 	now := time.Now()
 	lastModified := now.Add(-25 * time.Hour)
@@ -21,11 +21,11 @@ func HasValidate(h test.Helper, _ ...interface{}) {
 	header.Set("Etag", eTag)
 	header.Set("Cache-Control", "public")
 
-	h.ForwardResponse()
+	h.SendResponseToClient()
 
 	req = h.NewRequest("GET", test.Normal)
 
-	_, req = h.ForwardRequest(req)
+	_, req = h.SendRequestToServer(req)
 
 	if req == nil {
 		h.Fail("proxy did not revalidate a cached response")

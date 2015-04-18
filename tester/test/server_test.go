@@ -7,9 +7,9 @@ import (
 func specialTestTest(h Helper, args ...interface{}) {
 	t := args[0].(*testing.T)
 	req := h.NewRequest("GET", Special)
-	_, req = h.ForwardRequest(req)
+	_, req = h.SendRequestToServer(req)
 
-	resp := h.ForwardResponse()
+	resp := h.SendResponseToClient()
 	if _, ok := resp.Header["Date"]; ok {
 		t.Error("special server response included a Date header")
 	}

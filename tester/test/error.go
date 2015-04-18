@@ -2,8 +2,8 @@ package test
 
 type brokenTest string
 
-var exMissingRequest = brokenTest("missing call to ForwardRequest")
-var exMissingResponse = brokenTest("missing call to ForwardResponse")
+var exMissingRequest = brokenTest("missing call to SendRequestToServer")
+var exMissingResponse = brokenTest("missing call to SendResponseToClient")
 
 type brokenProxy string
 

@@ -9,7 +9,7 @@ func HasCache(h test.Helper, _ ...interface{}) {
 	h.SetInfo("", "7234")
 
 	req := h.NewRequest("GET", test.Normal)
-	w, _ := h.ForwardRequest(req)
+	w, _ := h.SendRequestToServer(req)
 
 	lastModified := time.Now().Add(-25 * time.Hour)
 	expires := time.Now().Add(50 * time.Hour)
@@ -19,10 +19,10 @@ func HasCache(h test.Helper, _ ...interface{}) {
 	header.Set("Expires", expires.Format(time.RFC1123))
 	header.Set("Cache-Control", "public")
 
-	h.ForwardResponse()
+	h.SendResponseToClient()
 
 	req = h.NewRequest("GET", test.Normal)
-	_, req = h.ForwardRequest(req)
+	_, req = h.SendRequestToServer(req)
 	if req == nil {
 		h.Log("caching proxy detected")
 	} else {

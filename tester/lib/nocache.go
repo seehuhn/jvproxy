@@ -22,7 +22,7 @@ func NoCache(h test.Helper, args ...interface{}) {
 			req.Header.Add(key, val)
 		}
 	}
-	w, _ := h.ForwardRequest(req)
+	w, _ := h.SendRequestToServer(req)
 	header := w.Header()
 	for key, vals := range respHeaders {
 		for _, val := range vals {
@@ -30,10 +30,10 @@ func NoCache(h test.Helper, args ...interface{}) {
 		}
 	}
 	w.WriteHeader(statusCode)
-	h.ForwardResponse()
+	h.SendResponseToClient()
 
 	req = h.NewRequest(method, test.Normal)
-	_, req = h.ForwardRequest(req)
+	_, req = h.SendRequestToServer(req)
 	if req == nil {
 		h.Fail("proxy didn't contact server")
 	}
