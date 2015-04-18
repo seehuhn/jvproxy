@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/seehuhn/jvproxy/tester/test"
+	"net/http"
 )
 
 // AuthTest exercises the requirements of RFC7234, section 3.2
@@ -17,7 +18,7 @@ func AuthTest(h test.Helper, _ ...interface{}) {
 	if req.Header.Get("Authorization") != secret {
 		h.Fail("wrong/missing Authorization header")
 	}
-	h.SendResponseToClient()
+	h.SendResponseToClient(http.StatusOK)
 
 	req = h.NewRequest("GET", test.Normal)
 	_, req = h.SendRequestToServer(req)
@@ -25,5 +26,5 @@ func AuthTest(h test.Helper, _ ...interface{}) {
 		h.Fail("proxy did not revalidate authenticated response")
 	}
 
-	h.SendResponseToClient()
+	h.SendResponseToClient(http.StatusOK)
 }

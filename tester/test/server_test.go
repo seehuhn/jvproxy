@@ -1,6 +1,7 @@
 package test
 
 import (
+	"net/http"
 	"testing"
 )
 
@@ -9,7 +10,7 @@ func specialTestTest(h Helper, args ...interface{}) {
 	req := h.NewRequest("GET", Special)
 	_, req = h.SendRequestToServer(req)
 
-	resp := h.SendResponseToClient()
+	resp := h.SendResponseToClient(http.StatusOK)
 	if _, ok := resp.Header["Date"]; ok {
 		t.Error("special server response included a Date header")
 	}

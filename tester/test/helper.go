@@ -10,8 +10,8 @@ import (
 
 type Helper interface {
 	NewRequest(method string, tp serverType) *http.Request
-	SendRequestToServer(*http.Request) (http.ResponseWriter, *http.Request)
-	SendResponseToClient() *http.Response
+	SendRequestToServer(*http.Request) (http.Header, *http.Request)
+	SendResponseToClient(int) *http.Response
 
 	Log(format string, a ...interface{})
 	Fail(format string, a ...interface{})
@@ -70,7 +70,7 @@ func (h *helper) NewRequest(method string, tp serverType) *http.Request {
 	return req
 }
 
-func (h *helper) SendRequestToServer(req *http.Request) (http.ResponseWriter, *http.Request) {
+func (h *helper) SendRequestToServer(req *http.Request) (http.Header, *http.Request) {
 	if h.lastRequest != nil {
 		panic(exMissingResponse)
 	}
@@ -96,14 +96,18 @@ func (h *helper) SendRequestToServer(req *http.Request) (http.ResponseWriter, *h
 		panic(exWrongPath)
 	}
 
-	return h.lastRequest.w, req
+	return h.lastRequest.w.Header(), req
 }
 
-func (h *helper) completeRequest() {
+func (h *helper) completeRequest(status int) {
 	if h.lastRequest != nil {
-		h.lastBody = UniqueString(64)
-		h.times[len(h.times)-1].ResponseSent = time.Now()
-		h.lastRequest.w.Write([]byte(h.lastBody))
+		h.lastRequest.w.WriteHeader(status)
+		if status == http.StatusOK {
+			h.lastBody = UniqueString(64)
+			h.times[len(h.times)-1].ResponseSent = time.Now()
+			h.lastRequest.w.Write([]byte(h.lastBody))
+		}
+
 		close(h.lastRequest.done)
 
 		<-h.waitForServer
@@ -112,17 +116,13 @@ func (h *helper) completeRequest() {
 	}
 }
 
-func (h *helper) SendResponseToClient() *http.Response {
-	if h.lastRequest != nil {
-		h.completeRequest()
-	}
+func (h *helper) SendResponseToClient(status int) *http.Response {
+	h.completeRequest(status)
 
 	err := h.lastResponseError
 	if err != nil {
-		h.log.TestFail = true
-		h.log.Messages = append(h.log.Messages,
-			"error while reading response: "+err.Error())
-		return nil
+		msg := "error while reading response: " + err.Error()
+		panic(testFailure(msg))
 	}
 
 	resp := h.lastResponse
@@ -132,18 +132,14 @@ func (h *helper) SendResponseToClient() *http.Response {
 	bodyData, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
-		h.log.TestFail = true
-		h.log.Messages = append(h.log.Messages,
-			"error while reading body: "+err.Error())
-		return nil
+		msg := "error while reading body: " + err.Error()
+		panic(testFailure(msg))
 	}
 	body := string(bodyData)
 	if body != h.lastBody {
-		h.log.TestFail = true
 		msg := fmt.Sprintf("wrong server response, expected %q, got %q",
 			h.lastBody, body)
-		h.log.Messages = append(h.log.Messages, msg)
-		return nil
+		panic(testFailure(msg))
 	}
 
 	return resp

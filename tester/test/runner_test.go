@@ -1,6 +1,7 @@
 package test
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -8,7 +9,7 @@ import (
 func trivialTestTest(h Helper, _ ...interface{}) {
 	req := h.NewRequest("GET", Normal)
 	h.SendRequestToServer(req)
-	h.SendResponseToClient()
+	h.SendResponseToClient(http.StatusOK)
 }
 
 func TestRunner(t *testing.T) {
@@ -53,7 +54,7 @@ func TestMissingResponseTest(t *testing.T) {
 }
 
 func missingRequestTestTest(h Helper, _ ...interface{}) {
-	h.SendResponseToClient()
+	h.SendResponseToClient(http.StatusOK)
 }
 
 func TestMissingRequestTest(t *testing.T) {

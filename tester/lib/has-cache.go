@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/seehuhn/jvproxy/tester/test"
+	"net/http"
 	"time"
 )
 
@@ -9,17 +10,16 @@ func HasCache(h test.Helper, _ ...interface{}) {
 	h.SetInfo("", "7234")
 
 	req := h.NewRequest("GET", test.Normal)
-	w, _ := h.SendRequestToServer(req)
+	header, _ := h.SendRequestToServer(req)
 
 	lastModified := time.Now().Add(-25 * time.Hour)
 	expires := time.Now().Add(50 * time.Hour)
-	header := w.Header()
 	header.Set("Last-Modified", lastModified.Format(time.RFC1123))
 	header.Set("Etag", "\"etag\"")
 	header.Set("Expires", expires.Format(time.RFC1123))
 	header.Set("Cache-Control", "public")
 
-	h.SendResponseToClient()
+	h.SendResponseToClient(http.StatusOK)
 
 	req = h.NewRequest("GET", test.Normal)
 	_, req = h.SendRequestToServer(req)

@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/seehuhn/jvproxy/tester/test"
+	"net/http"
 	"time"
 )
 
@@ -9,19 +10,18 @@ func HasValidate(h test.Helper, _ ...interface{}) {
 	eTag := "\"" + test.UniqueString(16) + "\""
 
 	req := h.NewRequest("GET", test.Normal)
-	w, _ := h.SendRequestToServer(req)
+	header, _ := h.SendRequestToServer(req)
 
 	now := time.Now()
 	lastModified := now.Add(-25 * time.Hour)
 	expires := now.Add(-1 * time.Minute)
 
-	header := w.Header()
 	header.Set("Last-Modified", lastModified.Format(time.RFC1123))
 	header.Set("Expires", expires.Format(time.RFC1123))
 	header.Set("Etag", eTag)
 	header.Set("Cache-Control", "public")
 
-	h.SendResponseToClient()
+	h.SendResponseToClient(http.StatusOK)
 
 	req = h.NewRequest("GET", test.Normal)
 

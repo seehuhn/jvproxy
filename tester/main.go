@@ -81,4 +81,5 @@ func main() {
 
 	// tests relating to validation of stale responses
 	testRunner.Run(lib.HasValidate)
+	testRunner.Run(lib.CacheUpdate)
 }

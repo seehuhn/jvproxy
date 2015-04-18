@@ -22,15 +22,13 @@ func NoCache(h test.Helper, args ...interface{}) {
 			req.Header.Add(key, val)
 		}
 	}
-	w, _ := h.SendRequestToServer(req)
-	header := w.Header()
+	header, _ := h.SendRequestToServer(req)
 	for key, vals := range respHeaders {
 		for _, val := range vals {
 			header.Add(key, val)
 		}
 	}
-	w.WriteHeader(statusCode)
-	h.SendResponseToClient()
+	h.SendResponseToClient(statusCode)
 
 	req = h.NewRequest(method, test.Normal)
 	_, req = h.SendRequestToServer(req)

@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"github.com/seehuhn/trace"
 	"net"
 	"net/http"
@@ -83,7 +84,10 @@ func (run *Runner) Run(test Case, args ...interface{}) (pass bool) {
 				log.Messages = append(log.Messages, string(msg))
 				fail = false
 			} else {
-				panic(r)
+				msg := fmt.Sprintf("BROKEN TEST (panic): %v\n", r)
+				buf := make([]byte, 4096)
+				n := runtime.Stack(buf, false)
+				log.Messages = append(log.Messages, msg+string(buf[:n]))
 			}
 			log.TestFail = log.TestFail || fail
 		}
@@ -92,7 +96,7 @@ func (run *Runner) Run(test Case, args ...interface{}) (pass bool) {
 		pass = !log.TestFail
 	}()
 
-	defer proxy.completeRequest()
+	defer proxy.completeRequest(http.StatusInternalServerError)
 
 	test(proxy, args...)
 

@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/seehuhn/jvproxy/tester/test"
+	"net/http"
 )
 
 // The NoDate test exercises the requirements of RFC7231, section
@@ -12,8 +13,10 @@ import (
 func NoDate(h test.Helper, _ ...interface{}) {
 	h.SetInfo("", "7231-7.1.1.2")
 	req := h.NewRequest("GET", test.Special)
+
 	h.SendRequestToServer(req)
-	resp := h.SendResponseToClient()
+
+	resp := h.SendResponseToClient(http.StatusOK)
 
 	if len(resp.Header["Date"]) == 0 {
 		h.Fail("proxy failed to add missing date header")
