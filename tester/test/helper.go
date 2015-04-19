@@ -102,10 +102,11 @@ func (h *helper) SendRequestToServer(req *http.Request) (http.Header, *http.Requ
 func (h *helper) completeRequest(status int) {
 	if h.lastRequest != nil {
 		h.lastRequest.w.WriteHeader(status)
+		nextBody := UniqueString(64)
+		h.times[len(h.times)-1].ResponseSent = time.Now()
 		if status == http.StatusOK {
-			h.lastBody = UniqueString(64)
-			h.times[len(h.times)-1].ResponseSent = time.Now()
-			h.lastRequest.w.Write([]byte(h.lastBody))
+			h.lastBody = nextBody
+			h.lastRequest.w.Write([]byte(nextBody))
 		}
 
 		close(h.lastRequest.done)

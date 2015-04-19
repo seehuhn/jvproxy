@@ -78,14 +78,14 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// step 2: if the responses are stale, send a validation request
-	stale := true
 	if respData != nil {
+		stale := true
 		freshnessLifetime := proxy.getFreshnessLifetime(respData)
 		currentAge := proxy.getCurrentAge(respData)
 		stale = freshnessLifetime <= currentAge
-	}
-	if stale || cacheInfo.mustRevalidate {
-		respData = proxy.requestFromUpstream(req, choices)
+		if stale || cacheInfo.mustRevalidate {
+			respData = proxy.requestFromUpstream(req, choices)
+		}
 	}
 
 	// step 3: make sure we still have the body of the selected response
@@ -212,11 +212,13 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 
 	// TODO(voss): what to do about pre-existing If-None-Match and
 	//     If-Modified-Since headers?
+	conditional := false
 	var lastModified time.Time
 	for _, resp := range stale {
 		etag := resp.Header.Get("Etag")
 		if etag != "" {
 			upReq.Header.Add("If-None-Match", etag)
+			conditional = true
 		}
 		lm := httputil.ParseDate(resp.Header.Get("Last-Modified"))
 		if lm.After(lastModified) {
@@ -227,6 +229,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 		if !lastModified.IsZero() {
 			upReq.Header.Set("If-Modified-Since",
 				lastModified.Format(time.RFC1123))
+			conditional = true
 		}
 	}
 
@@ -262,7 +265,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 		upResp.Header.Set("Date", responseTime.Format(time.RFC1123))
 	}
 
-	if upResp.StatusCode == http.StatusNotModified {
+	if conditional && upResp.StatusCode == http.StatusNotModified {
 		selected := []*CacheEntry{}
 		done := false
 
@@ -385,6 +388,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 			sort.Sort(byDate(selected))
 			return selected[0]
 		}
+		return nil
 	}
 
 	return &CacheEntry{
