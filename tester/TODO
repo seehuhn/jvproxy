@@ -1,3 +1,6 @@
+TODO
+----
+
 - bug: if the proxy sends two upstream requests (e.g. conditional +
   unconditional), the proxy tester hangs.
 - Dumping stacktraces shows that after a while there are very many

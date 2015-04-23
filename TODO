@@ -11,3 +11,4 @@ TODO
 - try to handle tunneling of HTTPS
 - implement the http.RoundTripper interface for private caches
 - make sure cache hits appear in the log file correctly
+- record good statistics for monitoring and tuning
