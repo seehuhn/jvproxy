@@ -79,11 +79,11 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// step 2: if the responses are stale, send a validation request
 	if respData != nil {
-		stale := true
 		freshnessLifetime := proxy.getFreshnessLifetime(respData)
 		currentAge := proxy.getCurrentAge(respData)
-		stale = freshnessLifetime <= currentAge
+		stale := freshnessLifetime <= currentAge
 		if stale || cacheInfo.mustRevalidate {
+			log.CacheResult += "REVALIDATE,"
 			respData = proxy.requestFromUpstream(req, choices)
 		}
 	}
@@ -93,13 +93,18 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if respData != nil {
 		body = respData.GetBody()
 		if body == nil {
+			log.CacheResult += "DROPPED,"
 			respData = nil
 		}
 	}
 
 	// step 4: if the above fails, forward the request upstream
 	if respData == nil {
+		log.CacheResult += "MISS"
 		respData = proxy.requestFromUpstream(req, nil)
+	} else {
+		log.CacheResult += "HIT"
+		cacheInfo.canStore = false
 	}
 
 	log.ResponseReceivedNano = int64(time.Since(requestTime) / time.Nanosecond)
@@ -128,12 +133,10 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		} else {
 			entry.Commit()
 		}
-		log.CacheResult = "MISS,STORE"
+		log.CacheResult += ",STORE"
 	} else {
 		n, err = io.Copy(w, body)
-		if log.CacheResult == "" {
-			log.CacheResult = "MISS,NOSTORE"
-		}
+		log.CacheResult += ",NOSTORE"
 	}
 	if err != nil {
 		trace.T("jvproxy/handler", trace.PrioDebug,
@@ -239,7 +242,8 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 	if err != nil {
 		// TODO(voss): serve stale responses if available?
 		trace.T("jvproxy/handler", trace.PrioDebug,
-			"upstream server request failed: %s", err.Error())
+			"upstream server request failed: %s %s: %s",
+			req.Method, req.RequestURI, err.Error())
 		msg := "error: " + err.Error()
 		h := http.Header{}
 		h.Add("Content-Type", "text/plain")
