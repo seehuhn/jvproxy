@@ -188,5 +188,7 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 	trace.T("main", trace.PrioInfo, "listening at %q", *listenAddr)
-	server.ListenAndServe()
+	err = server.ListenAndServe()
+
+	trace.T("main", trace.PrioInfo, "something went wrong: %s", err.Error())
 }

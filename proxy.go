@@ -59,6 +59,13 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		proxy.logger <- log
 	}()
 
+	if req.Method == "CONNECT" {
+		code := http.StatusNotImplemented
+		http.Error(w, http.StatusText(code), code)
+		log.StatusCode = code
+		return
+	}
+
 	cacheInfo := proxy.getCacheability(req)
 
 	var respData *CacheEntry
