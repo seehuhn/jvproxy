@@ -10,5 +10,5 @@ TODO
   https://github.com/tsenart/vegeta
 - try to handle tunneling of HTTPS
 - implement the http.RoundTripper interface for private caches
-- make sure cache hits appear in the log file correctly
 - record good statistics for monitoring and tuning
+- the Spiegel web page sends "unsolicited response starting with H"????

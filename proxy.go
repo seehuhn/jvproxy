@@ -254,6 +254,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 		msg := "error: " + err.Error()
 		h := http.Header{}
 		h.Add("Content-Type", "text/plain")
+		// TODO(voss): use the correct 502/504 responses.
 		return &CacheEntry{ // TODO(voss): invent error reporting mechanism
 			MetaData: MetaData{
 				StatusCode: 555,
