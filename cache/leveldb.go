@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	"github.com/seehuhn/jvproxy/cache/pb"
 	"github.com/seehuhn/trace"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
@@ -24,7 +25,7 @@ const (
 
 const hashLen = 32
 
-type stats struct {
+type sample struct {
 	hash    []byte
 	useTime int64
 	size    int64
@@ -35,9 +36,15 @@ type ldbCache struct {
 	newDir  string
 	index   *leveldb.DB
 	meta    *leveldb.DB
-	stats   chan *stats
+
+	stats  *pb.Stats
+	submit chan *sample
 }
 
+// NewLevelDBCache creates a new `Cache` object, with on-disk backing
+// store in the directory `baseDir`.  If an existing cache is
+// discovered in `baseDir`, this cache is used, otherwise a new cache
+// is created.
 func NewLevelDBCache(baseDir string) (Cache, error) {
 	// create store directory hierarchy
 	directories := []string{
@@ -82,8 +89,9 @@ func NewLevelDBCache(baseDir string) (Cache, error) {
 		newDir:  newDir,
 		index:   index,
 		meta:    meta,
-		stats:   make(chan *stats, 16),
+		submit:  make(chan *sample, 16),
 	}
+	res.loadStats()
 	go res.manageIndex()
 
 	return res, nil
@@ -111,7 +119,7 @@ func (cache *ldbCache) Retrieve(req *http.Request) []*Entry {
 	}()
 	for iter.Next() {
 		key := iter.Key()
-		_, fields, values := keyToUrl(key)
+		_, fields, values := keyToURL(key)
 		if !varyHeadersMatch(fields, values, req.Header) {
 			continue
 		}
@@ -137,7 +145,7 @@ func (cache *ldbCache) Retrieve(req *http.Request) []*Entry {
 							"cannot stat %s: %s", fname, err.Error())
 						return nil
 					}
-					cache.stats <- &stats{
+					cache.submit <- &sample{
 						hash:    contentHash,
 						useTime: time.Now().Unix(),
 						size:    fi.Size(),
@@ -265,7 +273,7 @@ func urlToKey(url string, header http.Header) []byte {
 	return res
 }
 
-func keyToUrl(key []byte) (url string, fields []string, values []string) {
+func keyToURL(key []byte) (url string, fields []string, values []string) {
 	pos := bytes.IndexByte(key, '\000')
 	url, key = string(key[:pos]), key[pos+1:]
 	n := int(key[0])*256 + int(key[1])
@@ -342,7 +350,7 @@ func (entry *ldbEntry) Commit(size int64) {
 		return
 	}
 
-	entry.cache.stats <- &stats{
+	entry.cache.submit <- &sample{
 		hash:    contentHash,
 		useTime: time.Now().Unix(),
 		size:    size,

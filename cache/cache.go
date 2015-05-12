@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// Cache is the abstract interface for a cache for HTTP responses.
 type Cache interface {
 	// Retrieve returns all cache entries available for a given HTTP request.
 	Retrieve(*http.Request) []*Entry
@@ -26,6 +27,8 @@ type Cache interface {
 	Close() error
 }
 
+// MetaData describes the metadata of a HTTP response for use in a
+// caching proxy.
 type MetaData struct {
 	StatusCode    int
 	Header        http.Header
@@ -33,6 +36,7 @@ type MetaData struct {
 	ResponseDelay time.Duration
 }
 
+// Entry describes a stored HTTP response for use in a caching proxy.
 type Entry struct {
 	MetaData
 	GetBody func() io.ReadCloser

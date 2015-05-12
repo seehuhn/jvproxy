@@ -90,6 +90,8 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		freshnessLifetime := proxy.getFreshnessLifetime(respData)
 		currentAge := proxy.getCurrentAge(respData)
 		stale := freshnessLifetime <= currentAge
+		// TODO(voss): revalidate, if the cached response contains the
+		// no-cache directive
 		if stale || cacheInfo.mustRevalidate {
 			log.CacheResult += "REVALIDATE,"
 			respData = proxy.requestFromUpstream(req, choices)

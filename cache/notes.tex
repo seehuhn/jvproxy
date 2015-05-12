@@ -5,10 +5,15 @@
 \usepackage{amsmath}
 
 \def\cond#1#2{(#1\mskip1mu|\mskip1mu #2)}
+\def\L{\mathcal{L}}
 \def\R{\mathbb{R}}
+
+\parindent0pt
+\parskip1ex
 
 \begin{document}
 
+\textbf{Model 1.}
 Let $T_1, \ldots, T_n \in [0, \infty]$ be the waiting times with observed
 values $t_1, \ldots, t_n$ and $a_1,
 \ldots, a_n$ the right-censoring horizons.  Furthermore let $A = \bigl\{ i \bigm|
@@ -32,5 +37,30 @@ Then the likelihood is
    &= (p\lambda)^{|A|} \exp\Bigl( -\sum_{i\in A}t_i \Bigr)
      \cdot \prod_{i\in B} \bigl(p \exp(-\lambda a_i) + 1-p \bigr)
 \end{align*}
+
+\textbf{Model 2 (simplified).}
+If we fix $p=0$, the likelihood becomes
+\begin{align*}
+  L\cond{\lambda}{t_1, \ldots, t_n}
+   &= \lambda^{|A|} \exp\Bigl( - \lambda \sum_{i\in A}t_i \Bigr)
+     \cdot \exp\Bigl( - \lambda \sum_{i\in B}a_i \Bigr) \\
+   &= \lambda^{|A|} \exp\Bigl( - \lambda \sum_{i=1}^n t_i \Bigr),
+\end{align*}
+and the log-likelihood is
+\begin{equation*}
+  \L\cond{\lambda}{t_1, \ldots, t_n}
+    = |A| \log(\lambda) - \lambda \sum_{i=1}^n t_i.
+\end{equation*}
+Setting the derivative of $\L$ equal to~$0$ we find
+the ML estimator
+\begin{equation*}
+  \hat\lambda = \frac{|A|}{\sum_{i=1}^n t_i}.
+\end{equation*}
+
+\textbf{Model 3 (piecewise constant density).}
+Assume the density of $T_i$ is
+\begin{equation*}
+  f_T(t) = \sum_{i=1}^n c_i 1_{\{t\in A_i\}} + c_0 \delta_{\{\infty\}}(t).
+\end{equation*}
 
 \end{document}
