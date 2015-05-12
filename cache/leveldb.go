@@ -1,4 +1,4 @@
-package jvproxy
+package cache
 
 import (
 	"bytes"
@@ -18,72 +18,24 @@ import (
 
 const (
 	indexDirName = "index"
+	metaDirName  = "meta"
 	newDirName   = "new"
 )
 
 const hashLen = 32
 
-type Cache interface {
-	// Retrieve returns all cache entries available for a given HTTP request.
-	Retrieve(*http.Request) []*CacheEntry
-
-	// StoreStart initiates the process of storing a new server
-	// response in the cache.  The metadata of the response (url,
-	// headers, and status code) is provided as arguments to the
-	// StoreStart call, the response body must be delivered to the
-	// returned StoreCont object.
-	StoreStart(url string, meta *MetaData) StoreCont
-
-	// Update exists the metadata of an existing cache entry.
-	Update(url string, entry *CacheEntry)
-
-	// Close makes sure all persistent data is stored on disk and
-	// frees all resources associated with the cache.  The cache
-	// cannot be used anymore after Close has been called.
-	Close() error
-}
-
-type MetaData struct {
-	StatusCode    int
-	Header        http.Header
-	ResponseTime  time.Time
-	ResponseDelay time.Duration
-}
-
-type CacheEntry struct {
-	MetaData
-	GetBody func() io.ReadCloser
-	CacheID []byte
-	Source  string
-}
-
-// StoreCont objects are used to store a response body in the cache,
-// after the metadata already has been stored in the cache using the
-// Cache.StoreStart() method.
-type StoreCont interface {
-	// Reader returns an io.Reader which stores in the cache what it
-	// reads from r.  The argument should normally be the .Body field
-	// of the server response.  The resulting cache entry is stored in
-	// temporary storage until either .Commit() or .Discard() is
-	// called.
-	Reader(r io.Reader) io.Reader
-
-	// Commit is used to signal that the server response was received
-	// successfully and that the response body should be committed to
-	// persistent storage.
-	Commit()
-
-	// Discard is used to signal that transfer of the server response
-	// has not been received successfully (i.e. because the connection
-	// was interrupted), and that the data written so far should be
-	// discarded.
-	Discard()
+type stats struct {
+	hash    []byte
+	useTime int64
+	size    int64
 }
 
 type ldbCache struct {
 	baseDir string
 	newDir  string
-	DB      *leveldb.DB
+	index   *leveldb.DB
+	meta    *leveldb.DB
+	stats   chan *stats
 }
 
 func NewLevelDBCache(baseDir string) (Cache, error) {
@@ -97,6 +49,8 @@ func NewLevelDBCache(baseDir string) (Cache, error) {
 	}
 	indexDir := filepath.Join(baseDir, indexDirName)
 	directories = append(directories, indexDir)
+	metaDir := filepath.Join(baseDir, metaDirName)
+	directories = append(directories, metaDir)
 	newDir := filepath.Join(baseDir, newDirName)
 	directories = append(directories, newDir)
 
@@ -109,34 +63,44 @@ func NewLevelDBCache(baseDir string) (Cache, error) {
 		didCreate = didCreate || (err == nil)
 	}
 	if didCreate {
-		trace.T("jvproxy/store", trace.PrioInfo,
+		trace.T("jvproxy/cache", trace.PrioInfo,
 			"created store directories under %s", baseDir)
 	}
 
-	db, err := leveldb.OpenFile(indexDir, nil)
+	index, err := leveldb.OpenFile(indexDir, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ldbCache{
+	meta, err := leveldb.OpenFile(metaDir, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &ldbCache{
 		baseDir: baseDir,
 		newDir:  newDir,
-		DB:      db,
-	}, nil
+		index:   index,
+		meta:    meta,
+		stats:   make(chan *stats, 16),
+	}
+	go res.manageIndex()
+
+	return res, nil
 }
 
 func (cache *ldbCache) Close() error {
-	return cache.DB.Close()
+	return cache.meta.Close()
 }
 
-func (cache *ldbCache) Retrieve(req *http.Request) []*CacheEntry {
-	res := make([]*CacheEntry, 0, 1)
+func (cache *ldbCache) Retrieve(req *http.Request) []*Entry {
+	res := make([]*Entry, 0, 1)
 
 	url := req.URL.String()
 	keyPfx := make([]byte, len(url)+1)
 	copy(keyPfx, url)
 	limits := util.BytesPrefix(keyPfx)
-	iter := cache.DB.NewIterator(limits, nil)
+	iter := cache.meta.NewIterator(limits, nil)
 	defer func() {
 		iter.Release()
 		err := iter.Error()
@@ -161,10 +125,29 @@ func (cache *ldbCache) Retrieve(req *http.Request) []*CacheEntry {
 			continue
 		}
 
-		entry := &CacheEntry{
+		entry := &Entry{
 			MetaData: *metaData,
 			GetBody: func() io.ReadCloser {
-				body, _ := os.Open(cache.getStoreName(contentHash))
+				fname := cache.getStoreName(contentHash)
+				body, err := os.Open(fname)
+				if err == nil {
+					fi, err := body.Stat()
+					if err != nil {
+						trace.T("jvproxy/cache", trace.PrioError,
+							"cannot stat %s: %s", fname, err.Error())
+						return nil
+					}
+					cache.stats <- &stats{
+						hash:    contentHash,
+						useTime: time.Now().Unix(),
+						size:    fi.Size(),
+					}
+				} else {
+					if !os.IsNotExist(err) {
+						trace.T("jvproxy/cache", trace.PrioError,
+							"cannot read %s: %s", fname, err.Error())
+					}
+				}
 				return body
 			},
 			CacheID: contentHash,
@@ -195,7 +178,7 @@ func (cache *ldbCache) StoreStart(url string, meta *MetaData) StoreCont {
 	}
 }
 
-func (cache *ldbCache) Update(url string, entry *CacheEntry) {
+func (cache *ldbCache) Update(url string, entry *Entry) {
 	metaHash := cache.storeLdbMetaData(&entry.MetaData)
 	if metaHash == nil {
 		return
@@ -205,7 +188,7 @@ func (cache *ldbCache) Update(url string, entry *CacheEntry) {
 	hash := make([]byte, 2*hashLen)
 	copy(hash[:hashLen], metaHash)
 	copy(hash[hashLen:], entry.CacheID)
-	cache.DB.Put(key, hash, nil)
+	cache.meta.Put(key, hash, nil)
 }
 
 func (cache *ldbCache) loadLdbMetaData(hash []byte) *MetaData {
@@ -316,7 +299,7 @@ func (entry *ldbEntry) Reader(r io.Reader) io.Reader {
 	return io.TeeReader(io.TeeReader(r, entry.hash), entry.store)
 }
 
-func (entry *ldbEntry) Commit() {
+func (entry *ldbEntry) Commit(size int64) {
 	tmpName := entry.store.Name()
 	defer func() {
 		err := os.Remove(tmpName)
@@ -344,14 +327,25 @@ func (entry *ldbEntry) Commit() {
 	if err == nil {
 		trace.T("jvproxy/cache", trace.PrioDebug,
 			"new cache entry %s", storeName)
+	} else {
+		if !os.IsExist(err) {
+			trace.T("jvproxy/cache", trace.PrioError,
+				"cannot create %s: %s", storeName, err.Error())
+		}
+		return
 	}
-	// TODO(voss): check for errors different from an existing cache
-	// entry
 
-	err = entry.cache.DB.Put(entry.key, hash, nil)
+	err = entry.cache.meta.Put(entry.key, hash, nil)
 	if err != nil {
 		trace.T("jvproxy/cache", trace.PrioError,
 			"cannot store cache entry in leveldb: %s", err.Error())
+		return
+	}
+
+	entry.cache.stats <- &stats{
+		hash:    contentHash,
+		useTime: time.Now().Unix(),
+		size:    size,
 	}
 }
 

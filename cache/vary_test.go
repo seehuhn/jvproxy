@@ -1,4 +1,4 @@
-package jvproxy
+package cache
 
 import (
 	. "gopkg.in/check.v1"

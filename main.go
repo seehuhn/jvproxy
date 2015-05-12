@@ -23,6 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/seehuhn/jvproxy"
+	"github.com/seehuhn/jvproxy/cache"
 	"github.com/seehuhn/trace"
 	"html/template"
 	"log"
@@ -128,7 +129,7 @@ func installReport(mux *http.ServeMux, name string, handler http.HandlerFunc) {
 	})
 }
 
-func installAdminHandlers(mux *http.ServeMux, proxy *jvproxy.Proxy, cache jvproxy.Cache) {
+func installAdminHandlers(mux *http.ServeMux, proxy *jvproxy.Proxy, cache cache.Cache) {
 	installReport(mux, "index", func(w http.ResponseWriter, r *http.Request) {
 		err := reportTmpl["index"].Execute(w, map[string]interface{}{
 			"proxy": proxy,
@@ -173,7 +174,7 @@ func main() {
 		}
 	}
 
-	cache, err := jvproxy.NewLevelDBCache("cache")
+	cache, err := cache.NewLevelDBCache("cache-root")
 	if err != nil {
 		log.Fatalf("cannot create cache: %s", err.Error())
 	}

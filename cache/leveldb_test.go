@@ -1,34 +1,9 @@
-package jvproxy
+package cache
 
 import (
 	. "gopkg.in/check.v1"
-	"io"
 	"net/http"
 )
-
-type NullCache struct{}
-
-func (cache *NullCache) Retrieve(*http.Request) []*CacheEntry {
-	return nil
-}
-
-func (cache *NullCache) StoreStart(string, *MetaData) StoreCont {
-	return &nullEntry{}
-}
-
-func (cache *NullCache) Update(url string, entry *CacheEntry) {}
-
-func (cache *NullCache) Close() error {
-	return nil
-}
-
-type nullEntry struct{}
-
-func (entry *nullEntry) Reader(r io.Reader) io.Reader {
-	return r
-}
-func (entry *nullEntry) Commit()  {}
-func (entry *nullEntry) Discard() {}
 
 func (s *MySuite) TestKeys(c *C) {
 	testUrl := "http://example.com/test"

@@ -2,11 +2,12 @@ package jvproxy
 
 import (
 	"github.com/seehuhn/httputil"
+	"github.com/seehuhn/jvproxy/cache"
 	"strconv"
 	"time"
 )
 
-func (proxy *Proxy) getFreshnessLifetime(entry *CacheEntry) time.Duration {
+func (proxy *Proxy) getFreshnessLifetime(entry *cache.Entry) time.Duration {
 	// see http://tools.ietf.org/html/rfc7234#section-4.2.1
 	res := -3600 * 24 * 365 * time.Second
 	cc, _ := parseHeaders(entry.Header["Cache-Control"])
@@ -33,7 +34,7 @@ func (proxy *Proxy) getFreshnessLifetime(entry *CacheEntry) time.Duration {
 	return res
 }
 
-func (proxy *Proxy) getCurrentAge(entry *CacheEntry) time.Duration {
+func (proxy *Proxy) getCurrentAge(entry *cache.Entry) time.Duration {
 	// see http://tools.ietf.org/html/rfc7234#section-4.2.3
 	res := 3600 * 24 * 365 * time.Second
 

@@ -1,4 +1,4 @@
-package jvproxy
+package cache
 
 import (
 	"github.com/seehuhn/httputil"

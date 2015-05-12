@@ -1,0 +1,36 @@
+\documentclass[a4paper]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+
+\def\cond#1#2{(#1\mskip1mu|\mskip1mu #2)}
+\def\R{\mathbb{R}}
+
+\begin{document}
+
+Let $T_1, \ldots, T_n \in [0, \infty]$ be the waiting times with observed
+values $t_1, \ldots, t_n$ and $a_1,
+\ldots, a_n$ the right-censoring horizons.  Furthermore let $A = \bigl\{ i \bigm|
+t_i < n \bigr\}$ and $B = \bigl\{ i \bigm| t_i \geq n \bigr\}$.  We assume
+the following model:
+\begin{equation*}
+  P(T_i \in A)
+  = \int_A p \lambda \exp(-\lambda t_i) \,dt_i
+\end{equation*}
+for all $A\subseteq\R$ and
+\begin{equation*}
+  P(T_i = \infty)
+  = 1-p,
+\end{equation*}
+for parameters $p\in(0,1)$ and $\lambda>0$.
+Then the likelihood is
+\begin{align*}
+  L\cond{p, \lambda}{t_1, \ldots, t_n}
+  &= \prod_{i\in A} p \lambda \exp(-\lambda t_i)
+     \cdot \prod_{i\in B} \bigl(p \exp(-\lambda a_i) + 1-p \bigr) \\
+   &= (p\lambda)^{|A|} \exp\Bigl( -\sum_{i\in A}t_i \Bigr)
+     \cdot \prod_{i\in B} \bigl(p \exp(-\lambda a_i) + 1-p \bigr)
+\end{align*}
+
+\end{document}

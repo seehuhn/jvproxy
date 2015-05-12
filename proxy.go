@@ -2,6 +2,7 @@ package jvproxy
 
 import (
 	"github.com/seehuhn/httputil"
+	"github.com/seehuhn/jvproxy/cache"
 	"github.com/seehuhn/trace"
 	"io"
 	"io/ioutil"
@@ -16,13 +17,13 @@ import (
 type Proxy struct {
 	Name     string
 	upstream http.RoundTripper
-	cache    Cache
+	cache    cache.Cache
 	logger   chan<- *LogEntry
 	AdminMux *http.ServeMux
 	shared   bool
 }
 
-func NewProxy(name string, transport http.RoundTripper, cache Cache, shared bool) *Proxy {
+func NewProxy(name string, transport http.RoundTripper, cache cache.Cache, shared bool) *Proxy {
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
@@ -48,10 +49,10 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	requestTime := time.Now()
 	log := &LogEntry{
-		RequestTimeNano: requestTime.UnixNano(),
-		RemoteAddr:      req.RemoteAddr,
-		Method:          req.Method,
-		RequestURI:      req.RequestURI,
+		RequestTime: requestTime,
+		RemoteAddr:  req.RemoteAddr,
+		Method:      req.Method,
+		RequestURI:  req.RequestURI,
 	}
 	defer func() {
 		log.HandlerCompleteNano =
@@ -68,10 +69,10 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	cacheInfo := proxy.getCacheability(req)
 
-	var respData *CacheEntry
+	var respData *cache.Entry
 
 	// step 1: check whether any cached responses are available
-	choices := []*CacheEntry{}
+	choices := []*cache.Entry{}
 	if cacheInfo.canServeFromCache {
 		choices = proxy.cache.Retrieve(req)
 		if len(choices) > 0 {
@@ -138,7 +139,7 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			entry.Discard()
 		} else {
-			entry.Commit()
+			entry.Commit(n)
 		}
 		log.CacheResult += ",STORE"
 	} else {
@@ -150,10 +151,12 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			"error while writing response: %s", err.Error())
 	}
 	log.ContentLength = n
-	// TODO(voss): compare n to the server-provided Content-Length
+	// TODO(voss): compare n to the server-provided Content-Length?
+	// Or maybe unconditionally add a Content-Length header to the
+	// cached version?
 }
 
-type byDate []*CacheEntry
+type byDate []*cache.Entry
 
 func (x byDate) Len() int      { return len(x) }
 func (x byDate) Swap(i, j int) { x[i], x[j] = x[j], x[i] }
@@ -183,7 +186,7 @@ var perHopHeaders = []string{
 //
 // `stale` must be ordered in order of the Date header field, the
 // newest item first.
-func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) *CacheEntry {
+func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*cache.Entry) *cache.Entry {
 	upReq := new(http.Request)
 	*upReq = *req // includes shallow copies of maps, care is needed below ...
 	upReq.Proto = "HTTP/1.1"
@@ -255,8 +258,8 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 		h := http.Header{}
 		h.Add("Content-Type", "text/plain")
 		// TODO(voss): use the correct 502/504 responses.
-		return &CacheEntry{ // TODO(voss): invent error reporting mechanism
-			MetaData: MetaData{
+		return &cache.Entry{ // TODO(voss): invent error reporting mechanism
+			MetaData: cache.MetaData{
 				StatusCode: 555,
 				Header:     h,
 			},
@@ -278,7 +281,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 	}
 
 	if conditional && upResp.StatusCode == http.StatusNotModified {
-		selected := []*CacheEntry{}
+		selected := []*cache.Entry{}
 		done := false
 
 		eTag1 := upResp.Header.Get("Etag")
@@ -403,8 +406,8 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*CacheEntry) 
 		return nil
 	}
 
-	return &CacheEntry{
-		MetaData: MetaData{
+	return &cache.Entry{
+		MetaData: cache.MetaData{
 			StatusCode:    upResp.StatusCode,
 			Header:        upResp.Header,
 			ResponseTime:  responseTime,
@@ -476,7 +479,7 @@ func (proxy *Proxy) getCacheability(req *http.Request) *decision {
 	return res
 }
 
-func (proxy *Proxy) updateCacheability(resp *CacheEntry, res *decision) {
+func (proxy *Proxy) updateCacheability(resp *cache.Entry, res *decision) {
 	// At this point we already have obtained a new response from the
 	// server: only the .canStore field is still interesting.
 

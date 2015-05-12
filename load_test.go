@@ -2,6 +2,7 @@ package jvproxy
 
 import (
 	"fmt"
+	"github.com/seehuhn/jvproxy/cache"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +27,7 @@ func TestParallelAccess(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	cache := &NullCache{}
+	cache := &cache.NullCache{}
 	proxy := NewProxy("test", nil, cache, true)
 	if err != nil {
 		t.Fatal(err)
