@@ -37,7 +37,7 @@ type ldbCache struct {
 	index   *leveldb.DB
 	meta    *leveldb.DB
 
-	stats  *pb.Stats
+	stats  *pb.Stats // TODO(voss): needed?
 	submit chan *sample
 }
 

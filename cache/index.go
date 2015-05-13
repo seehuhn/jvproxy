@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // Keys with len different from `hashLen` cannot occur for real cache
@@ -20,9 +21,49 @@ const (
 	statsKey byte = 1
 )
 
-const scanChunkSize = 16
-const bigFileLimit = 1024
-const statsGroups = 5
+const (
+	bigFileLimit = 1024
+	statsGroups  = 5
+)
+
+const (
+	scanChunkSize  = 16
+	pruneChunkSize = 1000
+)
+
+type victim struct {
+	hash  []byte
+	size  int64
+	score float64
+}
+type candidates []victim
+
+func (p candidates) add(hash []byte, size int64, score float64) candidates {
+	hash = append([]byte{}, hash...)
+	n := len(p)
+	if n >= pruneChunkSize && p[n-1].score >= score {
+		return p
+	}
+	idx := sort.Search(n, func(i int) bool {
+		return p[i].score < score
+	})
+
+	if idx == n {
+		if n >= pruneChunkSize {
+			return p
+		}
+		return append(p, victim{hash, size, score})
+	}
+
+	if n < pruneChunkSize {
+		p = append(p, victim{})
+		copy(p[idx+1:n+1], p[idx:n])
+	} else {
+		copy(p[idx+1:n], p[idx:n-1])
+	}
+	p[idx] = victim{hash, size, score}
+	return p
+}
 
 func (cache *ldbCache) loadStats() {
 	var stats *pb.Stats
@@ -140,7 +181,9 @@ func getGroup(data *pb.Entry) int {
 	return int(group)
 }
 
-func (cache *ldbCache) secateurs() {
+func (cache *ldbCache) secateurs() candidates {
+	p := candidates{}
+
 	iter := cache.index.NewIterator(nil, nil)
 	for iter.Next() {
 		key := iter.Key()
@@ -159,37 +202,40 @@ func (cache *ldbCache) secateurs() {
 			continue
 		}
 
-		group := getGroup(data)
-		lambda := float64(1.0)
-		if cache.stats.Hits[group] > 0 {
-			lambda = float64(cache.stats.Hits[group]) / cache.stats.Sum[group]
-		} else {
-			hits := uint32(0)
-			for _, h := range cache.stats.Hits {
-				hits += h
-			}
-			if hits > 0 {
-				sum := float64(0.0)
-				for _, s := range cache.stats.Sum {
-					sum += s
-				}
-				lambda = float64(hits) / sum
-			}
-		}
-		size := data.GetSize()
-		fmt.Printf("%x, %10d bytes, %2d hits, %12.5f bytes/second\n",
-			key, size, data.GetUseCount(), float64(size)*lambda)
+		p = p.add(key, data.GetSize(), -float64(data.GetLastUsed()))
+
+		// group := getGroup(data)
+		// lambda := float64(1.0)
+		// if cache.stats.Hits[group] > 0 {
+		//	lambda = float64(cache.stats.Hits[group]) / cache.stats.Sum[group]
+		// } else {
+		//	hits := uint32(0)
+		//	for _, h := range cache.stats.Hits {
+		//		hits += h
+		//	}
+		//	if hits > 0 {
+		//		sum := float64(0.0)
+		//		for _, s := range cache.stats.Sum {
+		//			sum += s
+		//		}
+		//		lambda = float64(hits) / sum
+		//	}
+		// }
+		// size := data.GetSize()
+		// fmt.Printf("%x, %10d bytes, %2d hits, %12.5f bytes/second\n",
+		//	key, size, data.GetUseCount(), float64(size)*lambda)
 	}
 	iter.Release()
 	err := iter.Error()
 	if err != nil {
 		panic(err)
 	}
+	return p
 }
 
 // updateIndex updates statistical information in the index.  This
 // method is *not* goroutine-safe.
-func (cache *ldbCache) updateIndex(hash []byte, time, size int64, new bool) {
+func (cache *ldbCache) updateIndex(hash []byte, time, size int64, new bool) int64 {
 	var data *pb.Entry
 	raw, err := cache.index.Get(hash, nil)
 	if err == nil {
@@ -215,15 +261,17 @@ func (cache *ldbCache) updateIndex(hash []byte, time, size int64, new bool) {
 	}
 
 	if new && data != nil {
-		return
+		return data.GetSize()
 	}
 
+	var res int64
 	if data == nil {
 		data = &pb.Entry{
 			LastUsed: proto.Int64(time),
 			Size:     proto.Int64(size),
 			UseCount: proto.Int32(1),
 		}
+		res = size
 	} else {
 		group := getGroup(data)
 		n := data.GetUseCount()
@@ -254,17 +302,23 @@ func (cache *ldbCache) updateIndex(hash []byte, time, size int64, new bool) {
 			"error while writing index entry: %s",
 			err.Error())
 	}
+
+	return res
 }
 
 func (cache *ldbCache) manageIndex() {
 	primordial := make(chan *sample, scanChunkSize)
+	prune := make(chan candidates)
 
 	go func() {
 		cache.indexExistingEntries(primordial)
 
-		cache.secateurs()
+		p := cache.secateurs()
+		prune <- p
 	}()
 
+	var totalBytes int64
+	var limit int64 = 64 * 1024 * 1024
 	for {
 		select {
 		case entry, ok := <-cache.submit:
@@ -273,10 +327,33 @@ func (cache *ldbCache) manageIndex() {
 					"stopping cache manager for %d", cache.baseDir)
 				return
 			}
-			cache.updateIndex(entry.hash, entry.useTime, entry.size, false)
+			n := cache.updateIndex(entry.hash, entry.useTime, entry.size, false)
+			totalBytes += n
 			cache.saveStats() // TODO(voss): put in a time-delay
 		case entry := <-primordial:
-			cache.updateIndex(entry.hash, entry.useTime, entry.size, true)
+			n := cache.updateIndex(entry.hash, entry.useTime, entry.size, true)
+			totalBytes += n
+		case list := <-prune:
+			for _, x := range list {
+				if totalBytes < limit {
+					break
+				}
+				fname := cache.getStoreName(x.hash)
+				err := os.Remove(fname)
+				if err != nil {
+					trace.T("jvproxy/cache", trace.PrioError,
+						"cannot remove %s: %s", fname, err.Error())
+				}
+				err = cache.index.Delete(x.hash, nil)
+				if err != nil {
+					trace.T("jvproxy/cache", trace.PrioError,
+						"cannot delete index entry %x: %s", x.hash, err.Error())
+				}
+				// TODO(voss): update stats data
+				totalBytes -= x.size
+				fmt.Printf("remove %x (%d bytes) -> %d\n",
+					x.hash, x.size, totalBytes)
+			}
 		}
 	}
 }
