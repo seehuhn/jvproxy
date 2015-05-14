@@ -111,7 +111,6 @@ func (cache *ldbCache) saveStats() {
 			"error while writing stats data: %s",
 			err.Error())
 	}
-	fmt.Println("saved", cache.stats)
 }
 
 func (cache *ldbCache) indexExistingEntries(res chan<- *sample) {

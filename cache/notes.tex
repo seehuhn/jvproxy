@@ -3,6 +3,7 @@
 \usepackage[a4paper,margin=1in]{geometry}
 \usepackage{amsfonts}
 \usepackage{amsmath}
+\usepackage{hyperref}
 
 \def\cond#1#2{(#1\mskip1mu|\mskip1mu #2)}
 \def\L{\mathcal{L}}
@@ -12,6 +13,12 @@
 \parskip1ex
 
 \begin{document}
+
+TODO\\
+check \url{http://data.princeton.edu/wws509/notes/c7.pdf}, and in 
+particular the models with piecewise constant hazard rate.
+
+\bigskip
 
 \textbf{Model 1.}
 Let $T_1, \ldots, T_n \in [0, \infty]$ be the waiting times with observed
@@ -60,7 +67,14 @@ the ML estimator
 \textbf{Model 3 (piecewise constant density).}
 Assume the density of $T_i$ is
 \begin{equation*}
-  f_T(t) = \sum_{i=1}^n c_i 1_{\{t\in A_i\}} + c_0 \delta_{\{\infty\}}(t).
+  f_T(t)
+  = \sum_{j=1}^p c_j 1_{\{t\in A_j\}} + c_0 \delta_{\{\infty\}}(t).
 \end{equation*}
+Then the likelihood is 
+\begin{align*}
+  L\cond{c_0, \ldots, c_p}{t_1, \ldots, t_n}
+   &= \prod_{i\in A} \prod_{j=1}^p c_j^{1\{t_i\in A_i\}}
+     \cdot \prod_{i\in B} \cdots
+\end{align*}
 
 \end{document}
