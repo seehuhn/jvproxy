@@ -163,8 +163,8 @@ func (cache *ldbCache) indexExistingEntries(res chan<- *sample) {
 		f.Close()
 	}
 	trace.T("jvproxy/cache", trace.PrioInfo,
-		"found %d pre-existing cache entries, %d bytes total",
-		count, totalSize)
+		"found %d pre-existing cache entries, %s total",
+		count, ByteSize(totalSize))
 }
 
 func getGroup(data *pb.Entry) int {
@@ -180,15 +180,25 @@ func getGroup(data *pb.Entry) int {
 	return int(group)
 }
 
-func (cache *ldbCache) secateurs() candidates {
+func (cache *ldbCache) pruneData() candidates {
 	p := candidates{}
 
 	iter := cache.index.NewIterator(nil, nil)
+	defer func() {
+		iter.Release()
+		err := iter.Error()
+		if err != nil {
+			trace.T("jvproxy/cache", trace.PrioError,
+				"error while using levelDB iterator: %s", err.Error())
+		}
+	}()
 	for iter.Next() {
 		key := iter.Key()
 		if len(key) == 1 {
+			// special keys used to store meta-information in the DB
 			continue
 		}
+		var score float64 = 0.0
 		raw := iter.Value()
 		data := &pb.Entry{}
 		err := proto.Unmarshal(raw, data)
@@ -196,12 +206,12 @@ func (cache *ldbCache) secateurs() candidates {
 			trace.T("jvproxy/cache", trace.PrioError,
 				"error while decoding index entry: %s",
 				err.Error())
-			// TODO(voss): remove the corrupted entry.  Do we need to
-			// iterate over a snapshot for this to work?
-			continue
+			score = math.MaxFloat64
+		} else {
+			score = -float64(data.GetLastUsed())
 		}
 
-		p = p.add(key, data.GetSize(), -float64(data.GetLastUsed()))
+		p = p.add(key, data.GetSize(), score)
 
 		// group := getGroup(data)
 		// lambda := float64(1.0)
@@ -224,12 +234,39 @@ func (cache *ldbCache) secateurs() candidates {
 		// fmt.Printf("%x, %10d bytes, %2d hits, %12.5f bytes/second\n",
 		//	key, size, data.GetUseCount(), float64(size)*lambda)
 	}
-	iter.Release()
-	err := iter.Error()
-	if err != nil {
-		panic(err)
-	}
 	return p
+}
+
+func (cache *ldbCache) pruneMetadata() {
+	iter := cache.meta.NewIterator(nil, nil)
+	defer func() {
+		iter.Release()
+		err := iter.Error()
+		if err != nil {
+			trace.T("jvproxy/cache", trace.PrioError,
+				"error while using levelDB iterator: %s", err.Error())
+		}
+	}()
+	count := 0
+	for iter.Next() {
+		key := iter.Key()
+		hashes := iter.Value()
+		contentHash := hashes[hashLen:]
+		present, err := cache.index.Has(contentHash, nil)
+		if err != nil {
+			trace.T("jvproxy/cache", trace.PrioError,
+				"error while checking for key presence: %s", err.Error())
+		} else if !present {
+			err = cache.meta.Delete(key, nil)
+			if err != nil {
+				trace.T("jvproxy/cache", trace.PrioError,
+					"error while deleting DB entry: %s", err.Error())
+			} else {
+				count++
+			}
+		}
+	}
+	fmt.Println("pruned", count, "entries")
 }
 
 // updateIndex updates statistical information in the index.  This
@@ -312,8 +349,10 @@ func (cache *ldbCache) manageIndex() {
 	go func() {
 		cache.indexExistingEntries(primordial)
 
-		p := cache.secateurs()
+		p := cache.pruneData()
 		prune <- p
+
+		cache.pruneMetadata()
 	}()
 
 	var totalBytes int64
