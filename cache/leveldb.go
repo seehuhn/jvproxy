@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
-	"github.com/seehuhn/jvproxy/cache/pb"
 	"github.com/seehuhn/trace"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
@@ -37,7 +36,6 @@ type ldbCache struct {
 	index   *leveldb.DB
 	meta    *leveldb.DB
 
-	stats  *pb.Stats // TODO(voss): needed?
 	submit chan *sample
 }
 
@@ -91,7 +89,6 @@ func NewLevelDBCache(baseDir string) (Cache, error) {
 		meta:    meta,
 		submit:  make(chan *sample, 16),
 	}
-	res.loadStats()
 	go res.manageIndex()
 
 	return res, nil

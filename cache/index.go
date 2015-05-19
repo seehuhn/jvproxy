@@ -12,23 +12,14 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-)
-
-// Keys with len different from `hashLen` cannot occur for real cache
-// entries.  We use keys of the form `[]byte{x}` to store metadata,
-// where values of `x` are given in the following list.
-const (
-	statsKey byte = 1
-)
-
-const (
-	bigFileLimit = 1024
-	statsGroups  = 5
+	"sync"
 )
 
 const (
 	scanChunkSize  = 16
 	pruneChunkSize = 1000
+	lowWaterMark   = 48 * 1024 * 1024
+	highWaterMark  = 49 * 1024 * 1024
 )
 
 type victim struct {
@@ -65,55 +56,7 @@ func (p candidates) add(hash []byte, size int64, score float64) candidates {
 	return p
 }
 
-func (cache *ldbCache) loadStats() {
-	var stats *pb.Stats
-	key := []byte{statsKey}
-	raw, err := cache.index.Get(key, nil)
-	if err == nil {
-		stats = &pb.Stats{}
-		err := proto.Unmarshal(raw, stats)
-		if err != nil {
-			trace.T("jvproxy/cache", trace.PrioError,
-				"error while decoding stats data: %s",
-				err.Error())
-			stats = nil
-		} else if stats.GetVersion() != 0 {
-			trace.T("jvproxy/cache", trace.PrioCritical,
-				"unknown stats version %d",
-				stats.GetVersion())
-			panic("unknown stats version")
-		}
-	} else if err != leveldb.ErrNotFound {
-		trace.T("jvproxy/cache", trace.PrioError,
-			"error while reading stats data: %s",
-			err.Error())
-	}
-
-	if stats == nil {
-		stats = &pb.Stats{
-			Hits: make([]uint32, 2*statsGroups),
-			Sum:  make([]float64, 2*statsGroups),
-		}
-	}
-	cache.stats = stats
-	fmt.Println("loaded", cache.stats)
-}
-
-func (cache *ldbCache) saveStats() {
-	raw, err := proto.Marshal(cache.stats)
-	if err != nil {
-		panic(err)
-	}
-	key := []byte{statsKey}
-	err = cache.index.Put(key, raw, nil)
-	if err != nil {
-		trace.T("jvproxy/cache", trace.PrioError,
-			"error while writing stats data: %s",
-			err.Error())
-	}
-}
-
-func (cache *ldbCache) indexExistingEntries(res chan<- *sample) {
+func (cache *ldbCache) indexExistingData(res chan<- *sample) {
 	trace.T("jvproxy/cache", trace.PrioDebug,
 		"starting to index cache dir %s",
 		cache.baseDir)
@@ -167,20 +110,10 @@ func (cache *ldbCache) indexExistingEntries(res chan<- *sample) {
 		count, ByteSize(totalSize))
 }
 
-func getGroup(data *pb.Entry) int {
-	group := data.GetUseCount() - 1
-	if group < 0 {
-		group = 0
-	} else if group >= statsGroups {
-		group = statsGroups - 1
-	}
-	if data.GetSize() >= bigFileLimit {
-		group += statsGroups
-	}
-	return int(group)
-}
-
 func (cache *ldbCache) pruneData() candidates {
+	trace.T("jvproxy/cache", trace.PrioDebug,
+		"starting to prune data")
+
 	p := candidates{}
 
 	iter := cache.index.NewIterator(nil, nil)
@@ -193,12 +126,7 @@ func (cache *ldbCache) pruneData() candidates {
 		}
 	}()
 	for iter.Next() {
-		key := iter.Key()
-		if len(key) == 1 {
-			// special keys used to store meta-information in the DB
-			continue
-		}
-		var score float64 = 0.0
+		var score float64 // higher score = evicted sooner
 		raw := iter.Value()
 		data := &pb.Entry{}
 		err := proto.Unmarshal(raw, data)
@@ -206,38 +134,23 @@ func (cache *ldbCache) pruneData() candidates {
 			trace.T("jvproxy/cache", trace.PrioError,
 				"error while decoding index entry: %s",
 				err.Error())
-			score = math.MaxFloat64
+			score = math.MaxFloat64 // always evict invalid metadata
 		} else {
 			score = -float64(data.GetLastUsed())
 		}
 
-		p = p.add(key, data.GetSize(), score)
-
-		// group := getGroup(data)
-		// lambda := float64(1.0)
-		// if cache.stats.Hits[group] > 0 {
-		//	lambda = float64(cache.stats.Hits[group]) / cache.stats.Sum[group]
-		// } else {
-		//	hits := uint32(0)
-		//	for _, h := range cache.stats.Hits {
-		//		hits += h
-		//	}
-		//	if hits > 0 {
-		//		sum := float64(0.0)
-		//		for _, s := range cache.stats.Sum {
-		//			sum += s
-		//		}
-		//		lambda = float64(hits) / sum
-		//	}
-		// }
-		// size := data.GetSize()
-		// fmt.Printf("%x, %10d bytes, %2d hits, %12.5f bytes/second\n",
-		//	key, size, data.GetUseCount(), float64(size)*lambda)
+		p = p.add(iter.Key(), data.GetSize(), score)
 	}
+
+	trace.T("jvproxy/cache", trace.PrioDebug,
+		"identified %d data for pruning", len(p))
 	return p
 }
 
 func (cache *ldbCache) pruneMetadata() {
+	trace.T("jvproxy/cache", trace.PrioDebug,
+		"starting to prune metadata")
+
 	iter := cache.meta.NewIterator(nil, nil)
 	defer func() {
 		iter.Release()
@@ -266,11 +179,12 @@ func (cache *ldbCache) pruneMetadata() {
 			}
 		}
 	}
-	fmt.Println("pruned", count, "entries")
+	trace.T("jvproxy/cache", trace.PrioInfo,
+		"pruned %d metadata entries", count)
 }
 
-// updateIndex updates statistical information in the index.  This
-// method is *not* goroutine-safe.
+// updateIndex updates the information about the data with the given
+// hash in the index.  This method is *not* goroutine-safe.
 func (cache *ldbCache) updateIndex(hash []byte, time, size int64, new bool) int64 {
 	var data *pb.Entry
 	raw, err := cache.index.Get(hash, nil)
@@ -309,23 +223,12 @@ func (cache *ldbCache) updateIndex(hash []byte, time, size int64, new bool) int6
 		}
 		res = size
 	} else {
-		group := getGroup(data)
+		data.LastUsed = proto.Int64(time)
 		n := data.GetUseCount()
 		if n < math.MaxInt32 {
 			n++
 		}
-		dt := time - data.GetLastUsed()
-		data.LastUsed = proto.Int64(time)
 		data.UseCount = proto.Int32(n)
-
-		if dt > 0 {
-			cache.stats.Hits[group]++
-			cache.stats.Sum[group] += float64(dt)
-			if cache.stats.Hits[group] > math.MaxInt32/2 {
-				cache.stats.Hits[group] /= 2
-				cache.stats.Sum[group] /= 2
-			}
-		}
 	}
 
 	raw, err = proto.Marshal(data)
@@ -344,19 +247,40 @@ func (cache *ldbCache) updateIndex(hash []byte, time, size int64, new bool) int6
 
 func (cache *ldbCache) manageIndex() {
 	primordial := make(chan *sample, scanChunkSize)
-	prune := make(chan candidates)
-
-	go func() {
-		cache.indexExistingEntries(primordial)
-
-		p := cache.pruneData()
-		prune <- p
-
-		cache.pruneMetadata()
-	}()
+	type pruneRequest struct {
+		c    candidates
+		wait chan<- struct{}
+	}
+	prune := make(chan *pruneRequest)
 
 	var totalBytes int64
-	var limit int64 = 64 * 1024 * 1024
+	var pruneMutex sync.Mutex
+	pruneCond := sync.NewCond(&pruneMutex)
+
+	go func() {
+		cache.indexExistingData(primordial)
+
+		for {
+			// TODO(voss): implement a method to abort this loop
+
+			// wait until high watermark is reached
+			pruneMutex.Lock()
+			for totalBytes <= highWaterMark {
+				pruneCond.Wait()
+			}
+			pruneMutex.Unlock()
+
+			candidates := cache.pruneData()
+			wait := make(chan struct{})
+			prune <- &pruneRequest{
+				c:    candidates,
+				wait: wait,
+			}
+			_ = <-wait
+			cache.pruneMetadata()
+		}
+	}()
+
 	for {
 		select {
 		case entry, ok := <-cache.submit:
@@ -366,14 +290,26 @@ func (cache *ldbCache) manageIndex() {
 				return
 			}
 			n := cache.updateIndex(entry.hash, entry.useTime, entry.size, false)
+			pruneMutex.Lock()
 			totalBytes += n
-			cache.saveStats() // TODO(voss): put in a time-delay
+			if totalBytes > highWaterMark {
+				pruneCond.Signal()
+			}
+			pruneMutex.Unlock()
 		case entry := <-primordial:
 			n := cache.updateIndex(entry.hash, entry.useTime, entry.size, true)
+			pruneMutex.Lock()
 			totalBytes += n
-		case list := <-prune:
-			for _, x := range list {
-				if totalBytes < limit {
+			if totalBytes > highWaterMark {
+				pruneCond.Signal()
+			}
+			pruneMutex.Unlock()
+		case req := <-prune:
+			count := 0
+			var prunedSize int64
+			pruneMutex.Lock()
+			for _, x := range req.c {
+				if totalBytes <= lowWaterMark {
 					break
 				}
 				fname := cache.getStoreName(x.hash)
@@ -387,11 +323,15 @@ func (cache *ldbCache) manageIndex() {
 					trace.T("jvproxy/cache", trace.PrioError,
 						"cannot delete index entry %x: %s", x.hash, err.Error())
 				}
-				// TODO(voss): update stats data
+				count++
+				prunedSize += x.size
 				totalBytes -= x.size
-				fmt.Printf("remove %x (%d bytes) -> %d\n",
-					x.hash, x.size, totalBytes)
 			}
+			trace.T("jvproxy/cache", trace.PrioInfo,
+				"pruned %d data (%s total), cache is now %s",
+				count, ByteSize(prunedSize), ByteSize(totalBytes))
+			pruneMutex.Unlock()
+			close(req.wait)
 		}
 	}
 }

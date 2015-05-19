@@ -1,7 +1,10 @@
 TODO
 ----
 
-- store entries in leveldb in date order
+- bug: currently pruning may (will?) remove the metadata+header
+  information without updating the index database
+
+- store entries in leveldb in date order?
 - implement more of RFC 7234 and RFC 2616
 - add more unit tests
 - add a mechanism for pruning the cache
