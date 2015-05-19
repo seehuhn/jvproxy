@@ -1,13 +1,8 @@
 TODO
 ----
 
-- bug: currently pruning may (will?) remove the metadata+header
-  information without updating the index database
-
-- store entries in leveldb in date order?
 - implement more of RFC 7234 and RFC 2616
 - add more unit tests
-- add a mechanism for pruning the cache
 - does the following load tester help with testing?
   https://github.com/tsenart/vegeta
 - implement the CONNECT method (RFC7231, section 4.3.6)

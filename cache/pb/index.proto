@@ -1,0 +1,7 @@
+package pb;
+
+message Entry {
+	optional int64 lastUsed = 1;
+	optional int64 size = 2;
+	optional int32 useCount = 3;
+}

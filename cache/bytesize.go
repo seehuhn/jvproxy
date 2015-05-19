@@ -4,39 +4,40 @@ import (
 	"fmt"
 )
 
+type byteSize float64
+
 // Division operation is needed, so use float64 instead of int64
-type ByteSize float64
 
 const (
-	B ByteSize = 1 << (10 * iota)
-	KB
-	MB
-	GB
-	TB
-	PB
-	EB
-	ZB
-	YB
+	b_ byteSize = 1 << (10 * iota)
+	kb
+	mb
+	gb
+	tb
+	pb_
+	eb
+	zb
+	yb
 )
 
-func (b ByteSize) String() string {
+func (x byteSize) String() string {
 	switch {
-	case b >= YB:
-		return fmt.Sprintf("%.2f YB", b/YB)
-	case b >= ZB:
-		return fmt.Sprintf("%.2f ZB", b/ZB)
-	case b >= EB:
-		return fmt.Sprintf("%.2f EB", b/EB)
-	case b >= PB:
-		return fmt.Sprintf("%.2f PB", b/PB)
-	case b >= TB:
-		return fmt.Sprintf("%.2f TB", b/TB)
-	case b >= GB:
-		return fmt.Sprintf("%.2f GB", b/GB)
-	case b >= MB:
-		return fmt.Sprintf("%.2f MB", b/MB)
-	case b >= KB:
-		return fmt.Sprintf("%.2f KB", b/KB)
+	case x >= yb:
+		return fmt.Sprintf("%.2f YB", x/yb)
+	case x >= zb:
+		return fmt.Sprintf("%.2f ZB", x/zb)
+	case x >= eb:
+		return fmt.Sprintf("%.2f EB", x/eb)
+	case x >= pb_:
+		return fmt.Sprintf("%.2f PB", x/pb_)
+	case x >= tb:
+		return fmt.Sprintf("%.2f TB", x/tb)
+	case x >= gb:
+		return fmt.Sprintf("%.2f GB", x/gb)
+	case x >= mb:
+		return fmt.Sprintf("%.2f MB", x/mb)
+	case x >= kb:
+		return fmt.Sprintf("%.2f KB", x/kb)
 	}
-	return fmt.Sprintf("%g bytes", b)
+	return fmt.Sprintf("%g bytes", x)
 }

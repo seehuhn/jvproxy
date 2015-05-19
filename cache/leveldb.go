@@ -2,8 +2,9 @@ package cache
 
 import (
 	"bytes"
-	"encoding/gob"
 	"fmt"
+	"github.com/golang/protobuf/proto"
+	"github.com/seehuhn/jvproxy/cache/pb"
 	"github.com/seehuhn/trace"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
@@ -121,11 +122,9 @@ func (cache *ldbCache) Retrieve(req *http.Request) []*Entry {
 			continue
 		}
 
-		hashes := iter.Value()
-		metaHash := hashes[:hashLen]
-		contentHash := hashes[hashLen:]
-
-		metaData := cache.loadLdbMetaData(metaHash)
+		value := iter.Value()
+		contentHash := value[:hashLen]
+		metaData := decodeMetaData(value[hashLen:])
 		if metaData == nil {
 			continue
 		}
@@ -165,11 +164,6 @@ func (cache *ldbCache) Retrieve(req *http.Request) []*Entry {
 }
 
 func (cache *ldbCache) StoreStart(url string, meta *MetaData) StoreCont {
-	metaHash := cache.storeLdbMetaData(meta)
-	if metaHash == nil {
-		return nil
-	}
-
 	store, err := ioutil.TempFile(cache.newDir, "")
 	if err != nil {
 		panic(err)
@@ -178,67 +172,18 @@ func (cache *ldbCache) StoreStart(url string, meta *MetaData) StoreCont {
 		cache:    cache,
 		store:    store,
 		hash:     sha3.NewShake128(),
-		metaHash: metaHash,
+		metaData: meta.encode(),
 		key:      urlToKey(url, meta.Header),
 	}
 }
 
 func (cache *ldbCache) Update(url string, entry *Entry) {
-	metaHash := cache.storeLdbMetaData(&entry.MetaData)
-	if metaHash == nil {
-		return
-	}
-
 	key := urlToKey(url, entry.Header)
-	hash := make([]byte, 2*hashLen)
-	copy(hash[:hashLen], metaHash)
-	copy(hash[hashLen:], entry.CacheID)
-	cache.meta.Put(key, hash, nil)
-}
-
-func (cache *ldbCache) loadLdbMetaData(hash []byte) *MetaData {
-	file, err := os.Open(cache.getStoreName(hash))
-	if err != nil {
-		return nil
-	}
-	defer file.Close()
-
-	res := &MetaData{}
-	dec := gob.NewDecoder(file)
-	err = dec.Decode(res)
-	if err != nil {
-		return nil
-	}
-
-	return res
-}
-
-func (cache *ldbCache) storeLdbMetaData(m *MetaData) []byte {
-	buf := bytes.Buffer{}
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(m)
-	if err != nil {
-		panic(err)
-	}
-	data := buf.Bytes()
-
-	store, err := ioutil.TempFile(cache.newDir, "")
-	if err != nil {
-		panic(err)
-	}
-	tmpName := store.Name()
-	defer os.Remove(tmpName)
-	_, e1 := store.Write(data)
-	e2 := store.Close()
-	if e1 != nil || e2 != nil {
-		return nil
-	}
-
-	hash := make([]byte, hashLen)
-	sha3.ShakeSum128(hash, data)
-	storeName := cache.getStoreName(hash)
-	os.Link(tmpName, storeName)
-	return hash
+	rawMeta := entry.MetaData.encode()
+	value := make([]byte, hashLen+len(rawMeta))
+	copy(value[:hashLen], entry.CacheID)
+	copy(value[hashLen:], rawMeta)
+	cache.meta.Put(key, value, nil)
 }
 
 func (cache *ldbCache) getStoreName(hash []byte) string {
@@ -249,7 +194,7 @@ func (cache *ldbCache) getStoreName(hash []byte) string {
 
 func urlToKey(url string, header http.Header) []byte {
 	// TODO(voss): check that url contains no '\0' bytes?  To be safe,
-	// maybe encode strings with leanding length (using the
+	// maybe encode strings with leading length (using the
 	// encoding/binary module)?
 	res := []byte{}
 	res = append(res, []byte(url)...)
@@ -292,11 +237,50 @@ func keyToURL(key []byte) (url string, fields []string, values []string) {
 	return
 }
 
+func (meta *MetaData) encode() []byte {
+	data := &pb.Meta{}
+	data.StatusCode = proto.Int32(int32(meta.StatusCode))
+	for key, vals := range meta.Header {
+		for _, val := range vals {
+			data.Header = append(data.Header, key, val)
+		}
+	}
+	data.ResponseTime = proto.Int64(meta.ResponseTime.UnixNano())
+	data.ResponseDelay = proto.Int64(int64(meta.ResponseDelay))
+	raw, err := proto.Marshal(data)
+	if err != nil {
+		panic(err)
+	}
+	return raw
+}
+
+func decodeMetaData(raw []byte) *MetaData {
+	data := &pb.Meta{}
+	err := proto.Unmarshal(raw, data)
+	if err != nil {
+		trace.T("jvproxy/cache", trace.PrioError,
+			"error while decoding metadata: %s",
+			err.Error())
+		return nil
+	}
+
+	meta := &MetaData{
+		StatusCode:    int(data.GetStatusCode()),
+		Header:        make(http.Header),
+		ResponseTime:  time.Unix(0, data.GetResponseTime()),
+		ResponseDelay: time.Duration(data.GetResponseDelay()),
+	}
+	for i := 0; i < len(data.Header); i += 2 {
+		meta.Header.Add(data.Header[i], data.Header[i+1])
+	}
+	return meta
+}
+
 type ldbEntry struct {
 	cache    *ldbCache
 	store    *os.File
 	hash     sha3.ShakeHash
-	metaHash []byte
+	metaData []byte
 	key      []byte
 }
 
@@ -305,6 +289,8 @@ func (entry *ldbEntry) Reader(r io.Reader) io.Reader {
 }
 
 func (entry *ldbEntry) Commit(size int64) {
+	now := time.Now()
+
 	tmpName := entry.store.Name()
 	defer func() {
 		err := os.Remove(tmpName)
@@ -319,15 +305,15 @@ func (entry *ldbEntry) Commit(size int64) {
 		return
 	}
 
-	hash := make([]byte, 2*hashLen)
-	copy(hash[:hashLen], entry.metaHash)
-	contentHash := hash[hashLen:]
+	hash := make([]byte, hashLen+len(entry.metaData))
+	contentHash := hash[:hashLen]
 	_, err = io.ReadFull(entry.hash, contentHash)
 	if err != nil {
 		panic(err)
 	}
-	storeName := entry.cache.getStoreName(contentHash)
+	copy(hash[hashLen:], entry.metaData)
 
+	storeName := entry.cache.getStoreName(contentHash)
 	err = os.Link(tmpName, storeName)
 	if err == nil {
 		trace.T("jvproxy/cache", trace.PrioDebug,
@@ -349,7 +335,7 @@ func (entry *ldbEntry) Commit(size int64) {
 
 	entry.cache.submit <- &sample{
 		hash:    contentHash,
-		useTime: time.Now().Unix(),
+		useTime: now.Unix(),
 		size:    size,
 	}
 }

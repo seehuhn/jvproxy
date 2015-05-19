@@ -107,7 +107,7 @@ func (cache *ldbCache) indexExistingData(res chan<- *sample) {
 	}
 	trace.T("jvproxy/cache", trace.PrioInfo,
 		"found %d pre-existing cache entries, %s total",
-		count, ByteSize(totalSize))
+		count, byteSize(totalSize))
 }
 
 func (cache *ldbCache) pruneData() candidates {
@@ -329,7 +329,7 @@ func (cache *ldbCache) manageIndex() {
 			}
 			trace.T("jvproxy/cache", trace.PrioInfo,
 				"pruned %d data (%s total), cache is now %s",
-				count, ByteSize(prunedSize), ByteSize(totalBytes))
+				count, byteSize(prunedSize), byteSize(totalBytes))
 			pruneMutex.Unlock()
 			close(req.wait)
 		}
