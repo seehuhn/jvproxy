@@ -61,9 +61,79 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	if req.Method == "CONNECT" {
-		code := http.StatusNotImplemented
-		http.Error(w, http.StatusText(code), code)
-		log.StatusCode = code
+		dest := req.Host
+
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			trace.T("jvproxy/handler", trace.PrioError,
+				"cannot hijack connection for tunnel to %q",
+				dest)
+			code := http.StatusInternalServerError
+			http.Error(w, http.StatusText(code), code)
+			log.StatusCode = code
+			return
+		}
+
+		// check that we can resolve the server in the DNS
+		destAddr, err := net.ResolveTCPAddr("tcp", dest)
+		if err != nil {
+			trace.T("jvproxy/handler", trace.PrioInfo,
+				"tunnel to %q on behalf of %s failed: %s",
+				dest, req.RemoteAddr, err.Error())
+			code := http.StatusNotFound
+			http.Error(w, http.StatusText(code), code)
+			log.StatusCode = code
+			return
+		}
+		if destAddr.Port != 80 && destAddr.Port != 443 &&
+			!strings.HasPrefix(req.RemoteAddr, "127.0.0.1:") {
+			trace.T("jvproxy/handler", trace.PrioInfo,
+				"tunnel to %s on behalf of %s not allowed",
+				destAddr, req.RemoteAddr)
+			code := http.StatusForbidden
+			http.Error(w, http.StatusText(code), code)
+			log.StatusCode = code
+			return
+		}
+
+		destConn, err := net.DialTCP("tcp", nil, destAddr)
+		if err != nil {
+			trace.T("jvproxy/handler", trace.PrioInfo,
+				"error while connecting to %s for tunnel: %s",
+				destAddr, err.Error())
+			code := http.StatusNotFound
+			http.Error(w, http.StatusText(code), code)
+			log.StatusCode = code
+			return
+		}
+		defer destConn.Close()
+		destConn.SetLinger(60)
+
+		conn, client, err := hj.Hijack()
+		if err != nil {
+			trace.T("jvproxy/handler", trace.PrioDebug,
+				"error while setting up tunnel on behalf of %s: %s",
+				req.RemoteAddr, err.Error())
+			code := http.StatusInternalServerError
+			http.Error(w, http.StatusText(code), code)
+			log.StatusCode = code
+			return
+		}
+		defer conn.Close()
+
+		var zeroTime time.Time
+		conn.SetDeadline(zeroTime)
+
+		// From this point on, the usual http methods on `w` won't
+		// work any more.
+
+		trace.T("jvproxy/handler", trace.PrioDebug,
+			"created tunnel to %s on behalf of %q",
+			destAddr, req.RemoteAddr)
+		client.WriteString("HTTP/1.1 200 OK\r\n\r\n")
+		client.Flush()
+		tunnel(destConn, conn)
+
 		return
 	}
 
