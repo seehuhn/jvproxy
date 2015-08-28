@@ -121,11 +121,11 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		defer conn.Close()
 
-		var zeroTime time.Time
-		conn.SetDeadline(zeroTime)
-
 		// From this point on, the usual http methods on `w` won't
 		// work any more.
+
+		var zeroTime time.Time
+		conn.SetDeadline(zeroTime)
 
 		trace.T("jvproxy/handler", trace.PrioDebug,
 			"created tunnel to %s on behalf of %q",
