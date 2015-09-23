@@ -179,12 +179,13 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// step 4: if the above fails, forward the request upstream
-	if respData == nil {
-		log.CacheResult += "MISS"
-		respData = proxy.requestFromUpstream(req, nil)
-	} else {
+	isHit := respData != nil
+	if isHit {
 		log.CacheResult += "HIT"
 		cacheInfo.canStore = false
+	} else {
+		log.CacheResult += "MISS"
+		respData = proxy.requestFromUpstream(req, nil)
 	}
 
 	log.ResponseReceivedNano = int64(time.Since(requestTime) / time.Nanosecond)
@@ -216,7 +217,9 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		log.CacheResult += ",STORE"
 	} else {
 		n, err = io.Copy(w, body)
-		log.CacheResult += ",NOSTORE"
+		if !isHit {
+			log.CacheResult += ",NOSTORE"
+		}
 	}
 	if err != nil {
 		trace.T("jvproxy/handler", trace.PrioDebug,
@@ -532,6 +535,7 @@ func (proxy *Proxy) getCacheability(req *http.Request) *decision {
 	if proxy.shared && len(headers["Authorization"]) > 0 {
 		res.hasAuthorization = true
 		// decision defered to `proxy.updateCacheability()`
+		// TODO(voss): does the comment above still make sense?
 	}
 
 	// RFC 7234, section 4
@@ -612,5 +616,8 @@ func (proxy *Proxy) updateCacheability(resp *cache.Entry, res *decision) {
 	if _, hasPublic := cc["public"]; hasPublic {
 		cacheable = true
 	}
-	res.canStore = res.canStore && cacheable
+	if !cacheable {
+		res.canStore = false
+		res.log = append(res.log, "resp:nc")
+	}
 }
