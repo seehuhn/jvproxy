@@ -34,7 +34,7 @@ import (
 	"time"
 )
 
-var listenAddr = flag.String("listen-addr", "localhost:8080",
+var listenAddr = flag.String("listen-addr", "0.0.0.0:8080",
 	"the address to listen on, in the form host:port")
 
 var upstreamProxy = flag.String("upstream-proxy", "",
