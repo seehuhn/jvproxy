@@ -9,12 +9,12 @@ type byteSize float64
 // Division operation is needed, so use float64 instead of int64
 
 const (
-	b_ byteSize = 1 << (10 * iota)
+	bt byteSize = 1 << (10 * iota)
 	kb
 	mb
 	gb
 	tb
-	pb_
+	pbt
 	eb
 	zb
 	yb
@@ -28,8 +28,8 @@ func (x byteSize) String() string {
 		return fmt.Sprintf("%.2f ZB", x/zb)
 	case x >= eb:
 		return fmt.Sprintf("%.2f EB", x/eb)
-	case x >= pb_:
-		return fmt.Sprintf("%.2f PB", x/pb_)
+	case x >= pbt:
+		return fmt.Sprintf("%.2f PB", x/pbt)
 	case x >= tb:
 		return fmt.Sprintf("%.2f TB", x/tb)
 	case x >= gb:

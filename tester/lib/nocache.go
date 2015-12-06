@@ -5,8 +5,7 @@ import (
 	"net/http"
 )
 
-// The NoCache test verifies that a server response is not cached by
-// the proxy.
+// NoCache verifies that a server response is not cached by the proxy.
 func NoCache(h test.Helper, args ...interface{}) {
 	RFC := args[0].(string)
 	method := args[1].(string)

@@ -17,15 +17,15 @@ var privateCacheFlag = flag.Bool("private", false,
 func main() {
 	flag.Parse()
 
-	proxyUrl := flag.Arg(0)
-	if proxyUrl == "" {
-		proxyUrl = "localhost:8080"
+	proxyURL := flag.Arg(0)
+	if proxyURL == "" {
+		proxyURL = "localhost:8080"
 	}
-	if !strings.Contains(proxyUrl, "://") {
-		proxyUrl = "http://" + proxyUrl
+	if !strings.Contains(proxyURL, "://") {
+		proxyURL = "http://" + proxyURL
 	}
-	fmt.Println("testing proxy at", proxyUrl)
-	proxy, err := url.Parse(proxyUrl)
+	fmt.Println("testing proxy at", proxyURL)
+	proxy, err := url.Parse(proxyURL)
 	if err != nil {
 		panic(err)
 	}
@@ -48,7 +48,7 @@ func main() {
 	// tests relating to caching
 	testRunner.Run(lib.HasCache)
 
-	var noHeaders http.Header = nil
+	var noHeaders http.Header
 	testRunner.Run(lib.NoCache, "7234-3.0.a", "XQRL", noHeaders, noHeaders, 200)
 	testRunner.Run(lib.NoCache, "7234-3.0.b", "GET", noHeaders, noHeaders, 713)
 	h := http.Header{}

@@ -9,7 +9,7 @@ import (
 
 var testerSecret []byte
 
-var seq int64 = 0
+var seq int64
 var seqLock sync.Mutex
 
 func int64ToBytes(x int64) []byte {
