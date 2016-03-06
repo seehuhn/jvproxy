@@ -7,9 +7,9 @@ import (
 )
 
 func HasValidate(h test.Helper, _ ...interface{}) {
-	eTag := "\"" + test.UniqueString(16) + "\""
+	eTag := "\"" + test.RandomString(16) + "\""
 
-	req := h.NewRequest("GET", test.Normal)
+	req := h.NewRequest("GET")
 	header, _ := h.SendRequestToServer(req)
 
 	now := time.Now()
@@ -21,9 +21,9 @@ func HasValidate(h test.Helper, _ ...interface{}) {
 	header.Set("Etag", eTag)
 	header.Set("Cache-Control", "public")
 
-	h.SendResponseToClient(http.StatusOK)
+	h.SendResponseToClient(http.StatusOK, nil)
 
-	req = h.NewRequest("GET", test.Normal)
+	req = h.NewRequest("GET")
 
 	_, req = h.SendRequestToServer(req)
 

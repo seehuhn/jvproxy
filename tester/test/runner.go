@@ -2,103 +2,122 @@ package test
 
 import (
 	"fmt"
-	"github.com/seehuhn/trace"
 	"net"
 	"net/http"
 	"net/url"
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 const testPrefix = "github.com/seehuhn/jvproxy/tester/lib."
 
+var countMutex sync.Mutex
+var countClient int
+var countServer int
+
+// A Runner provides the infrastructure to run a series of tests on a
+// HTTP proxy.
 type Runner struct {
 	log chan<- *LogEntry
 
-	normalListener  net.Listener
-	normalAddr      string
-	specialListener net.Listener
-	specialAddr     string
-	transport       *http.Transport
+	listener   net.Listener
+	serverAddr string
+	transport  *http.Transport
 
-	server chan *requestFromProxy
+	nextServerJob chan serverJob
 }
 
+// NewRunner allocates a new test.Runner for testing the given proxy.
+// Test results will be written to the `LogEntry` channel.
 func NewRunner(proxy *url.URL, log chan<- *LogEntry) *Runner {
-	normalListener := getListener()
-	specialListener := getListener()
-
+	listener := getListener()
 	transport := &http.Transport{}
 	if proxy != nil {
 		transport.Proxy =
 			func(*http.Request) (*url.URL, error) { return proxy, nil }
 	}
 
-	run := &Runner{
+	nextServerJob := make(chan serverJob, 1)
+
+	go func() {
+		http.Serve(listener, serverJobQueue(nextServerJob))
+	}()
+
+	return &Runner{
 		log: log,
 
-		normalListener:  normalListener,
-		normalAddr:      normalListener.Addr().String(),
-		specialListener: specialListener,
-		specialAddr:     specialListener.Addr().String(),
-		transport:       transport,
+		listener:   listener,
+		serverAddr: listener.Addr().String(),
+		transport:  transport,
 
-		server: make(chan *requestFromProxy, 1),
+		nextServerJob: nextServerJob,
 	}
-	go http.Serve(run.normalListener, http.HandlerFunc(run.serveHTTP))
-	trace.T("jvproxy/tester", trace.PrioDebug,
-		"normal server listening at %s", run.normalAddr)
-	go serveSpecial(run.specialListener, http.HandlerFunc(run.serveHTTP))
-	trace.T("jvproxy/tester", trace.PrioDebug,
-		"special server listening at %s", run.specialAddr)
-	return run
 }
 
+// Close shuts down the test runner and frees all resources associated
+// to the test runner.
 func (run *Runner) Close() error {
-	return run.normalListener.Close()
+	// This stops the HTTP server started by NewRunner().
+	return run.listener.Close()
 }
 
+// Run executes a single test case.  The optional arguments `args` are
+// passed through to the test case.
 func (run *Runner) Run(test Case, args ...interface{}) (pass bool) {
-	log := &LogEntry{}
+	log := &LogEntry{
+		Pass: true,
+	}
 	fptr := reflect.ValueOf(test).Pointer()
 	log.Name = runtime.FuncForPC(fptr).Name()
 	if strings.HasPrefix(log.Name, testPrefix) {
 		log.Name = log.Name[len(testPrefix):]
 	}
-	proxy := &helper{
-		runner: run,
-		log:    log,
-		path:   "/" + log.Name + "/" + UniqueString(16),
-	}
+
+	helper := newHelper(run.serverAddr, run.transport, run.nextServerJob, log)
 
 	defer func() {
-		if r := recover(); r != nil {
-			fail := true
-			if msg, ok := r.(brokenTest); ok {
-				log.Messages = append(log.Messages,
-					"BROKEN TEST: "+string(msg))
-			} else if msg, ok := r.(testFailure); ok {
-				log.Messages = append(log.Messages, string(msg))
-			} else if msg, ok := r.(testSuccess); ok {
-				log.Messages = append(log.Messages, string(msg))
-				fail = false
-			} else {
-				msg := fmt.Sprintf("BROKEN TEST (panic): %v\n", r)
-				buf := make([]byte, 4096)
-				n := runtime.Stack(buf, false)
-				log.Messages = append(log.Messages, msg+string(buf[:n]))
+		if helper.state != stateReady {
+			task := &ResponseBodySpec{
+				Length: 0,
 			}
-			log.TestFail = log.TestFail || fail
+			helper.SendResponseToClient(http.StatusInternalServerError, task)
 		}
-		log.setTimes(proxy.times)
-		run.log <- log
-		pass = !log.TestFail
+
+		countMutex.Lock()
+		if countClient != 0 {
+			msg := fmt.Sprintf("client count %d != 0", countClient)
+			log.Add(msg)
+		}
+		if countServer != 0 {
+			msg := fmt.Sprintf("server count %d != 0", countServer)
+			log.Add(msg)
+		}
+		countMutex.Unlock()
+
+		if r := recover(); r != nil {
+			if msg, ok := r.(brokenTest); ok {
+				log.Pass = false
+				log.Add("BROKEN TEST: " + string(msg))
+			} else if msg, ok := r.(testFailure); ok {
+				log.Pass = false
+				log.Add(string(msg))
+			} else if msg, ok := r.(testSuccess); ok {
+				log.Pass = true
+				log.Add(string(msg))
+			} else {
+				panic(r)
+			}
+		}
+		if run.log != nil {
+			run.log <- log
+		}
+
+		pass = log.Pass
 	}()
 
-	defer proxy.completeRequest(http.StatusInternalServerError)
-
-	test(proxy, args...)
+	test(helper, args...)
 
 	return
 }

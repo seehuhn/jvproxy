@@ -35,15 +35,16 @@ func main() {
 	testRunner := test.NewRunner(proxy, log.Submit)
 
 	// test whether the proxy can be reached
-	ok := testRunner.Run(lib.Simple)
+	ok := testRunner.Run(lib.Simple, 64)
 	if !ok {
 		log.Close()
 		fmt.Fprint(os.Stderr, "proxy failed, aborting ...\n")
 		os.Exit(1)
 	}
 
-	// tests relating to general proxy operations
-	testRunner.Run(lib.NoDate)
+	// test requests of different sizes
+	testRunner.Run(lib.Simple, 1024)
+	testRunner.Run(lib.Simple, 1024*1024)
 
 	// tests relating to caching
 	testRunner.Run(lib.HasCache)

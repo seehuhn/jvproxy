@@ -7,14 +7,14 @@ import (
 )
 
 func CacheUpdate(h test.Helper, _ ...interface{}) {
-	eTag := "\"" + test.UniqueString(16) + "\""
+	eTag := "\"" + test.RandomString(16) + "\""
 
 	now := time.Now()
 	lastModified := now.Add(-25 * time.Hour).Format(time.RFC1123)
 	expires1 := now.Add(-2 * time.Minute).Format(time.RFC1123)
 	expires2 := now.Add(-1 * time.Minute).Format(time.RFC1123)
 
-	req := h.NewRequest("GET", test.Normal)
+	req := h.NewRequest("GET")
 	header, _ := h.SendRequestToServer(req)
 	header.Set("Cache-Control", "public")
 	header.Set("Etag", eTag)
@@ -22,9 +22,13 @@ func CacheUpdate(h test.Helper, _ ...interface{}) {
 	header.Set("Last-Modified", lastModified)
 	header.Set("X-change", "old")
 	header.Set("X-keep", "old")
-	h.SendResponseToClient(http.StatusOK)
+	body := &test.ResponseBodySpec{
+		Seed:   1,
+		Length: 1000,
+	}
+	h.SendResponseToClient(http.StatusOK, body)
 
-	req = h.NewRequest("GET", test.Normal)
+	req = h.NewRequest("GET")
 	header, req = h.SendRequestToServer(req)
 	if req == nil {
 		h.Fail("proxy did not revalidate a cached response")
@@ -38,14 +42,14 @@ func CacheUpdate(h test.Helper, _ ...interface{}) {
 	header.Set("Etag", eTag)
 	header.Set("Expires", expires2)
 	header.Set("X-change", "new")
-	resp := h.SendResponseToClient(http.StatusNotModified)
-	if resp.Header.Get("Expires") != expires2 {
+	header = h.SendResponseToClient(http.StatusNotModified, body)
+	if header.Get("Expires") != expires2 {
 		h.Fail("Expires header not updated")
 	}
-	if resp.Header.Get("X-keep") != "old" {
+	if header.Get("X-keep") != "old" {
 		h.Fail("X-keep header not kept")
 	}
-	if resp.Header.Get("X-change") != "new" {
+	if header.Get("X-change") != "new" {
 		h.Fail("X-change header not updated")
 	}
 }

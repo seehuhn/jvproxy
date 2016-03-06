@@ -2,16 +2,25 @@ package test
 
 import (
 	"fmt"
-	"github.com/seehuhn/trace"
-	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"time"
 )
 
+type helperState int
+
+const (
+	stateReady helperState = iota
+	stateReqSent
+)
+
+// Helper objects allow test cases to generate HTTP requests and
+// responses, and to report the test outcome.  The only way to
+// generate Helper objects is via the Runner.Run() method.
 type Helper interface {
-	NewRequest(method string, tp serverType) *http.Request
+	NewRequest(method string) *http.Request
 	SendRequestToServer(*http.Request) (http.Header, *http.Request)
-	SendResponseToClient(int) *http.Response
+	SendResponseToClient(int, *ResponseBodySpec) http.Header
 
 	Log(format string, a ...interface{})
 	Fail(format string, a ...interface{})
@@ -20,50 +29,43 @@ type Helper interface {
 	SetInfo(name, RFC string)
 }
 
-const specialServerMessage = "using special server"
-
-type serverType int
-
-const (
-	Normal serverType = iota
-	Special
-)
-
 type helper struct {
-	runner *Runner
-	log    *LogEntry
-	path   string
+	state helperState
 
-	lastBody string
+	path          string
+	serverAddr    string
+	transport     *http.Transport
+	nextServerJob chan serverJob
+	nextClientJob chan *clientJob
 
-	lastRequest       *requestFromProxy
-	lastResponse      *http.Response
-	lastResponseError error
+	serverCalled bool
+	stats0       *clientStats
+	stats1       *serverStats1
+	stats2       *serverStats2
 
-	times []timeStamps
+	log *LogEntry
 
-	waitForServer <-chan bool
+	baseSeed int64
+	nextSeed int64
 }
 
-type timeStamps struct {
-	RequestSent      time.Time
-	RequestReceived  time.Time
-	ResponseSent     time.Time
-	ResponseReceived time.Time
-}
-
-func (h *helper) NewRequest(method string, tp serverType) *http.Request {
-	var addr string
-	switch tp {
-	case Normal:
-		addr = h.runner.normalAddr
-	case Special:
-		h.log.Messages = append(h.log.Messages, specialServerMessage)
-		addr = h.runner.specialAddr
-	default:
-		panic("invalid server type")
+func newHelper(addr string, transport *http.Transport, nextServerJob chan serverJob, log *LogEntry) *helper {
+	path := "/" + log.Name + "/" + RandomString(16)
+	h := &helper{
+		state:         stateReady,
+		path:          path,
+		serverAddr:    addr,
+		transport:     transport,
+		nextServerJob: nextServerJob,
+		nextClientJob: make(chan *clientJob, 1),
+		log:           log,
+		baseSeed:      time.Now().UnixNano(),
 	}
-	req, err := http.NewRequest(method, "http://"+addr+h.path, nil)
+	return h
+}
+
+func (h *helper) NewRequest(method string) *http.Request {
+	req, err := http.NewRequest(method, "http://"+h.serverAddr+h.path, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -71,94 +73,168 @@ func (h *helper) NewRequest(method string, tp serverType) *http.Request {
 }
 
 func (h *helper) SendRequestToServer(req *http.Request) (http.Header, *http.Request) {
-	if h.lastRequest != nil {
+	if h.state != stateReady {
 		panic(exMissingResponse)
 	}
-	h.times = append(h.times, timeStamps{})
+	h.state = stateReqSent
 
-	waitForServer := make(chan bool, 1)
-	go h.client(req, waitForServer)
+	// tell the server what to expect.
+	serverJob := make(chan *serverStats1)
+	h.nextServerJob <- serverJob
 
-	select {
-	case s := <-h.runner.server:
-		// The proxy contacted the server.
-		h.waitForServer = waitForServer
-		h.lastRequest = s
-		h.times[len(h.times)-1].RequestReceived = s.time
-	case <-waitForServer:
-		// The proxy did not contact the server.
-		h.waitForServer = nil
-		return nil, nil
-	}
+	// send the request to the server
+	go func() {
+		countMutex.Lock()
+		countClient++
+		countMutex.Unlock()
 
-	req = h.lastRequest.req
-	if req.URL.Path != h.path {
-		panic(exWrongPath)
-	}
+		// The roundtrip to the server will only return after
+		// .SendResponseToClient() has been called.
+		timeA0 := time.Now()
+		resp, err := h.transport.RoundTrip(req)
+		timeB1 := time.Now()
+		close(serverJob)
 
-	return h.lastRequest.w.Header(), req
-}
-
-func (h *helper) completeRequest(status int) {
-	if h.lastRequest != nil {
-		h.lastRequest.w.WriteHeader(status)
-		nextBody := UniqueString(64)
-		h.times[len(h.times)-1].ResponseSent = time.Now()
-		if status == http.StatusOK {
-			h.lastBody = nextBody
-			h.lastRequest.w.Write([]byte(nextBody))
+		if err != nil {
+			panic(err)
 		}
 
-		close(h.lastRequest.done)
+		respInfo := <-h.nextClientJob
+		// TODO(voss): check that the status code is right.
+		// TODO(voss): more checks here
+		equal, err := checkBody(resp.Body, respInfo.Task)
 
-		<-h.waitForServer
-		h.waitForServer = nil
-		h.lastRequest = nil
+		timeC1 := time.Now()
+		resp.Body.Close()
+		respInfo.StatsChan <- &clientStats{
+			Header:      resp.Header,
+			TimeA0:      timeA0,
+			TimeB1:      timeB1,
+			TimeC1:      timeC1,
+			CorrectBody: equal,
+			Err:         err,
+		}
+		close(respInfo.StatsChan)
+
+		countMutex.Lock()
+		countClient--
+		if countClient < 0 {
+			panic("client count corrupted")
+		}
+		countMutex.Unlock()
+	}()
+
+	// check whether the server was called
+	stats1, serverCalled := <-serverJob
+	h.serverCalled = serverCalled
+	h.stats1 = stats1
+
+	if !serverCalled {
+		// Server did not collect serverJob, so we discard it here.
+		tmp := <-h.nextServerJob
+		if tmp != serverJob {
+			panic("server out of sync")
+		}
+		return nil, nil
 	}
+	return stats1.Header, stats1.Req
 }
 
-func (h *helper) SendResponseToClient(status int) *http.Response {
-	h.completeRequest(status)
+type clientJob struct {
+	Task      *ResponseBodySpec
+	StatsChan chan<- *clientStats
+}
 
-	err := h.lastResponseError
-	if err != nil {
-		msg := "error while reading response: " + err.Error()
-		panic(testFailure(msg))
-	}
+type clientStats struct {
+	Header      http.Header
+	TimeA0      time.Time
+	TimeB1      time.Time
+	TimeC1      time.Time
+	CorrectBody bool
+	Err         error
+}
 
-	resp := h.lastResponse
-	if resp == nil {
+type serverStats1 struct {
+	TimeA1           time.Time
+	Req              *http.Request
+	Header           http.Header
+	ResponseSpecChan chan<- *responseSpec
+	Continuation     <-chan *serverStats2
+}
+
+type responseSpec struct {
+	Status int
+	*ResponseBodySpec
+	Continuation chan<- *serverStats2
+}
+
+type serverStats2 struct {
+	TimeB0 time.Time
+	TimeC0 time.Time
+	N      int64
+	err    error
+}
+
+func (h *helper) SendResponseToClient(Status int, task *ResponseBodySpec) http.Header {
+	if h.state != stateReqSent {
 		panic(exMissingRequest)
 	}
-	bodyData, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		msg := "error while reading body: " + err.Error()
-		panic(testFailure(msg))
+	h.state = stateReady
+
+	// Use a per-helper seed offset, and allow for default tasks.
+	var taskCopy ResponseBodySpec
+	if task != nil {
+		taskCopy = *task
+	} else {
+		h.nextSeed--
+		taskCopy.Seed = h.nextSeed
+		taskCopy.Length = 267 // any other number would also be ok
 	}
-	body := string(bodyData)
-	if body != h.lastBody {
-		msg := fmt.Sprintf("wrong server response, expected %q, got %q",
-			h.lastBody, body)
-		panic(testFailure(msg))
+	task = &taskCopy
+	task.Seed += h.baseSeed
+
+	// Trigger completion of the HTTP roundtrip.
+	var stats2Chan chan *serverStats2
+	if h.serverCalled {
+		stats2Chan = make(chan *serverStats2)
+		h.stats1.ResponseSpecChan <- &responseSpec{
+			Status:           Status,
+			ResponseBodySpec: task,
+			Continuation:     stats2Chan,
+		}
+		close(h.stats1.ResponseSpecChan)
 	}
 
-	return resp
+	// Allow the client to verify the message body.
+	clientStatsChan := make(chan *clientStats, 1)
+	h.nextClientJob <- &clientJob{
+		Task:      task,
+		StatsChan: clientStatsChan,
+	}
+
+	// Collect the server-side stats about sending the message body.
+	if h.serverCalled {
+		h.stats2 = <-stats2Chan
+	}
+
+	h.stats0 = <-clientStatsChan
+
+	return h.stats0.Header
 }
 
 func (h *helper) Log(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	h.log.Messages = append(h.log.Messages, msg)
-}
-
-func (h *helper) Pass(format string, a ...interface{}) {
-	msg := fmt.Sprintf(format, a...)
-	panic(testSuccess(msg))
+	h.log.Add(msg)
 }
 
 func (h *helper) Fail(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
 	panic(testFailure(msg))
+}
+
+func (h *helper) Pass(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	panic(testSuccess(msg))
 }
 
 func (h *helper) SetInfo(name, RFC string) {
@@ -170,20 +246,14 @@ func (h *helper) SetInfo(name, RFC string) {
 	}
 }
 
-func (h *helper) client(req *http.Request, waitForServer chan<- bool) {
-	trace.T("jvproxy/tester", trace.PrioDebug,
-		"requesting %s via proxy", req.URL)
-	h.times[len(h.times)-1].RequestSent = time.Now()
-	resp, err := h.runner.transport.RoundTrip(req)
-	h.times[len(h.times)-1].ResponseReceived = time.Now()
-	if resp != nil {
-		trace.T("jvproxy/tester", trace.PrioVerbose,
-			"proxy response received: %s", resp.Status)
-	} else {
-		trace.T("jvproxy/tester", trace.PrioDebug,
-			"error while reading proxy response: %s", err)
+const validChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+// RandomString returns a random string of length `n`, composed of
+// upper- and lower-case letters as well as digits.
+func RandomString(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = validChars[rand.Intn(len(validChars))]
 	}
-	h.lastResponse = resp
-	h.lastResponseError = err
-	close(waitForServer)
+	return string(b)
 }

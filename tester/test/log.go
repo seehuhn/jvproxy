@@ -1,40 +1,35 @@
 package test
 
 import (
-	"time"
+	"strings"
 )
 
+// A LogEntry summarises the results of a single proxy test.  The log
+// entry is composed of the proxy test name, a boolean to indicate
+// whether the proxy passed the test, and a list of messages.
 type LogEntry struct {
 	Name     string
-	TestFail bool
-
+	Pass     bool
 	Messages []string
-	Features map[string]bool
-
-	TotalTime, ReqTime, RespTime time.Duration
 }
 
-func (l *LogEntry) setTimes(times []timeStamps) {
-	var cacheTime time.Duration
-	var reqTime time.Duration
-	var respTime time.Duration
-	nCached := 0
-	nForward := 0
-	for _, t := range times {
-		if t.ResponseSent.IsZero() {
-			cacheTime += t.ResponseReceived.Sub(t.RequestSent)
-			nCached++
-		} else {
-			reqTime += t.RequestReceived.Sub(t.RequestSent)
-			respTime += t.ResponseReceived.Sub(t.ResponseSent)
-			nForward++
-		}
+// Add appends a new message to the log entry.
+func (log *LogEntry) Add(msg string) {
+	log.Messages = append(log.Messages, msg)
+}
+
+// String formats the log entry in a multi-line, human readable form.
+func (log *LogEntry) String() string {
+	res := []string{}
+	status := "FAIL"
+	if log.Pass {
+		status = "OK"
 	}
-	if nCached > 0 {
-		l.TotalTime = cacheTime / time.Duration(nCached)
+	res = append(res, log.Name+" "+status)
+	for _, msg := range log.Messages {
+		msg = strings.TrimSpace(msg)
+		msg = strings.Replace(msg, "\n", "\n  ", -1)
+		res = append(res, "- "+msg)
 	}
-	if nForward > 0 {
-		l.ReqTime = reqTime / time.Duration(nForward)
-		l.RespTime = respTime / time.Duration(nForward)
-	}
+	return strings.Join(res, "\n")
 }

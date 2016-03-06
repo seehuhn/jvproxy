@@ -1,11 +1,7 @@
 package test
 
 import (
-	"bufio"
 	"flag"
-	"fmt"
-	"github.com/seehuhn/trace"
-	"io"
 	"net"
 	"net/http"
 	"time"
@@ -43,91 +39,65 @@ func getListener() (listener net.Listener) {
 	panic("cannot listen on " + *serveAddr + ": " + err.Error())
 }
 
-type requestFromProxy struct {
-	time time.Time
-	w    http.ResponseWriter
-	req  *http.Request
-	done chan<- bool
-}
+type serverJob chan<- *serverStats1
+type serverJobQueue <-chan serverJob
 
-func (run *Runner) serveHTTP(w http.ResponseWriter, req *http.Request) {
-	done := make(chan bool)
-	run.server <- &requestFromProxy{
-		time: time.Now(),
-		w:    w,
-		req:  req,
-		done: done,
+func (nextServerJob serverJobQueue) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	timeA1 := time.Now()
+
+	countMutex.Lock()
+	countServer++
+	countMutex.Unlock()
+
+	// the the job description
+	serverJob := <-nextServerJob
+
+	// TODO(voss): check that the URL is right
+
+	// step 1: tell the client that the server was contacted.
+	responseInfoChan := make(chan *responseSpec)
+	serverJob <- &serverStats1{
+		TimeA1:           timeA1,
+		Req:              req,
+		Header:           w.Header(),
+		ResponseSpecChan: responseInfoChan,
 	}
-	<-done
-}
+	// The serverJob channel is closed by the client once the
+	// RoundTrip() call has completed.  This allows to determine if
+	// the server was contacted or not (contacted, if the serverStats1
+	// data arrives).
 
-func serveSpecial(listener net.Listener, handler http.Handler) {
-	var tempDelay time.Duration // how long to sleep on accept failure
-	for {
-		c, err := listener.Accept()
-		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				if tempDelay == 0 {
-					tempDelay = 5 * time.Millisecond
-				} else {
-					tempDelay *= 2
-				}
-				if max := 1 * time.Second; tempDelay > max {
-					tempDelay = max
-				}
-				time.Sleep(tempDelay)
-				continue
-			}
-			break
-		}
-		tempDelay = 0
+	// SendRequestToServer() returns (but client go routine still running) ...
 
-		w := &specialResponseWriter{
-			Conn:   c,
-			header: http.Header{},
-		}
-		w.header.Add("Connection", "close")
+	// SendResponseToClient() called ...
 
-		trace.T("jvproxy/tester/special", trace.PrioVerbose,
-			"accepted connection from %s", c.RemoteAddr())
-		req, err := http.ReadRequest(bufio.NewReader(c))
+	// step 2: Wait until .SendResponseToClient() tells us which
+	// status code and what response body to send.
+	responseInfo := <-responseInfoChan
 
-		if req == nil {
-			trace.T("jvproxy/tester/special", trace.PrioDebug,
-				"invalid request from %s: %s", c.RemoteAddr(), err)
-		} else {
-			trace.T("jvproxy/tester/special", trace.PrioDebug,
-				"received request from %s for %s",
-				c.RemoteAddr(), req.URL)
-			handler.ServeHTTP(w, req)
-		}
-		c.Close()
+	// step 3: Write the response header.  This causes the
+	// .Roundtrip() call in the client to return.
+	timeB0 := time.Now()
+	w.WriteHeader(responseInfo.Status)
+
+	// step 4: Write the request body, as instructed by the
+	// ResponseBodySpec structure.
+	n, err := responseInfo.ResponseBodySpec.Write(w)
+	timeC0 := time.Now()
+
+	// step 5: Tell the client that the response has been written.
+	responseInfo.Continuation <- &serverStats2{
+		TimeB0: timeB0,
+		TimeC0: timeC0,
+		N:      n,
+		err:    err,
 	}
-}
+	close(responseInfo.Continuation)
 
-type specialResponseWriter struct {
-	Conn        io.Writer
-	header      http.Header
-	WroteHeader bool
-}
-
-func (srw *specialResponseWriter) Header() http.Header {
-	return srw.header
-}
-
-func (srw *specialResponseWriter) WriteHeader(code int) {
-	if srw.WroteHeader {
-		panic("header written twice")
+	countMutex.Lock()
+	countServer--
+	if countServer < 0 {
+		panic("server count corrupted")
 	}
-	fmt.Fprintf(srw.Conn, "HTTP/1.1 %d %s\r\n", code, http.StatusText(code))
-	srw.header.Write(srw.Conn)
-	srw.Conn.Write([]byte("\r\n"))
-	srw.WroteHeader = true
-}
-
-func (srw *specialResponseWriter) Write(data []byte) (int, error) {
-	if !srw.WroteHeader {
-		srw.WriteHeader(http.StatusOK)
-	}
-	return srw.Conn.Write(data)
+	countMutex.Unlock()
 }

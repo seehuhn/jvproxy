@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/seehuhn/jvproxy/tester/test"
-	"time"
 )
 
 type Logger struct {
@@ -30,14 +29,11 @@ func (log *Logger) Close() {
 
 func (log *Logger) listen() {
 	for entry := range log.receive {
-		if entry.TestFail {
+		if !entry.Pass {
 			fmt.Print("\n\n*** test failed ***\n")
 			fmt.Println("TEST FAILURE", entry.Name)
 		} else {
-			q := float64(time.Millisecond)
-			fmt.Printf(".... %-32s %8.2fms %8.2fms %8.2fms\n", entry.Name,
-				float64(entry.TotalTime)/q, float64(entry.ReqTime)/q,
-				float64(entry.RespTime)/q)
+			fmt.Printf(".... %-32s\n", entry.Name)
 		}
 		for _, msg := range entry.Messages {
 			fmt.Println("     * " + msg)
