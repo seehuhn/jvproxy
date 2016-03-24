@@ -9,7 +9,7 @@ type byteSize float64
 // Division operation is needed, so use float64 instead of int64
 
 const (
-	bt byteSize = 1 << (10 * iota)
+	_ byteSize = 1 << (10 * iota)
 	kb
 	mb
 	gb
