@@ -1,9 +1,6 @@
 package jvproxy
 
 import (
-	"github.com/seehuhn/httputil"
-	"github.com/seehuhn/jvproxy/cache"
-	"github.com/seehuhn/trace"
 	"io"
 	"io/ioutil"
 	"net"
@@ -12,6 +9,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/seehuhn/httputil"
+	"github.com/seehuhn/jvproxy/cache"
+	"github.com/seehuhn/trace"
 )
 
 type Proxy struct {

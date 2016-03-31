@@ -1,9 +1,10 @@
 package lib
 
 import (
-	"github.com/seehuhn/jvproxy/tester/test"
 	"net/http"
 	"time"
+
+	"github.com/seehuhn/jvproxy/tester/test"
 )
 
 func HasCache(h test.Helper, _ ...interface{}) {

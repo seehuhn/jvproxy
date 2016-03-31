@@ -1,10 +1,11 @@
 package jvproxy
 
 import (
-	"github.com/seehuhn/httputil"
-	"github.com/seehuhn/jvproxy/cache"
 	"strconv"
 	"time"
+
+	"github.com/seehuhn/httputil"
+	"github.com/seehuhn/jvproxy/cache"
 )
 
 func (proxy *Proxy) getFreshnessLifetime(entry *cache.Entry) time.Duration {

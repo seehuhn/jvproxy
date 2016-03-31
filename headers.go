@@ -17,9 +17,10 @@
 package jvproxy
 
 import (
-	"github.com/seehuhn/httputil"
 	"net/http"
 	"strings"
+
+	"github.com/seehuhn/httputil"
 )
 
 func parseHeaders(headers []string) (map[string]string, error) {

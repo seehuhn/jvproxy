@@ -1,8 +1,9 @@
 package lib
 
 import (
-	"github.com/seehuhn/jvproxy/tester/test"
 	"net/http"
+
+	"github.com/seehuhn/jvproxy/tester/test"
 )
 
 // NoCache verifies that a server response is not cached by the proxy.

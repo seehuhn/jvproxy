@@ -4,7 +4,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/seehuhn/jvproxy/tester/tast"
+
+	"github.com/seehuhn/jvproxy/tester/test"
 )
 
 func myTest(h test.Helper, args ...interface{}) {

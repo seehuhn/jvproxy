@@ -2,8 +2,9 @@ package lib
 
 import (
 	"fmt"
-	"github.com/seehuhn/jvproxy/tester/test"
 	"net/http"
+
+	"github.com/seehuhn/jvproxy/tester/test"
 )
 
 func Simple(h test.Helper, args ...interface{}) {

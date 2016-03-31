@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/seehuhn/jvproxy/tester/lib"
-	"github.com/seehuhn/jvproxy/tester/test"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/seehuhn/jvproxy/tester/lib"
+	"github.com/seehuhn/jvproxy/tester/test"
 )
 
 var privateCacheFlag = flag.Bool("private", false,

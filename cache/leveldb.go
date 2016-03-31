@@ -3,18 +3,19 @@ package cache
 import (
 	"bytes"
 	"fmt"
-	"github.com/golang/protobuf/proto"
-	"github.com/seehuhn/jvproxy/cache/pb"
-	"github.com/seehuhn/trace"
-	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/util"
-	"golang.org/x/crypto/sha3"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/golang/protobuf/proto"
+	"github.com/seehuhn/jvproxy/cache/pb"
+	"github.com/seehuhn/trace"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/util"
+	"golang.org/x/crypto/sha3"
 )
 
 const (

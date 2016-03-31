@@ -1,11 +1,12 @@
 package cache
 
 import (
-	"github.com/seehuhn/httputil"
 	"net/http"
 	"net/textproto"
 	"sort"
 	"strings"
+
+	"github.com/seehuhn/httputil"
 )
 
 func getVaryFields(header http.Header) []string {

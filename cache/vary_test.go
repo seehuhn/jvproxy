@@ -1,8 +1,9 @@
 package cache
 
 import (
-	. "gopkg.in/check.v1"
 	"net/http"
+
+	. "gopkg.in/check.v1"
 )
 
 func (s *MySuite) TestVary(c *C) {

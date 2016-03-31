@@ -1,8 +1,9 @@
 package lib
 
 import (
-	"github.com/seehuhn/jvproxy/tester/test"
 	"net/http"
+
+	"github.com/seehuhn/jvproxy/tester/test"
 )
 
 // AuthTest exercises the requirements of RFC7234, section 3.2

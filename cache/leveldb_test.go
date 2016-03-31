@@ -1,9 +1,10 @@
 package cache
 
 import (
-	. "gopkg.in/check.v1"
 	"net/http"
 	"time"
+
+	. "gopkg.in/check.v1"
 )
 
 func (s *MySuite) TestKeys(c *C) {

@@ -22,9 +22,6 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/seehuhn/jvproxy"
-	"github.com/seehuhn/jvproxy/cache"
-	"github.com/seehuhn/trace"
 	"html/template"
 	"log"
 	"net/http"
@@ -32,6 +29,10 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/seehuhn/jvproxy"
+	"github.com/seehuhn/jvproxy/cache"
+	"github.com/seehuhn/trace"
 )
 
 var listenAddr = flag.String("listen-addr", "0.0.0.0:8080",

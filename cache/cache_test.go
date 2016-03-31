@@ -1,8 +1,9 @@
 package cache
 
 import (
-	. "gopkg.in/check.v1"
 	"testing"
+
+	. "gopkg.in/check.v1"
 )
 
 type MySuite struct{}

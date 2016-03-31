@@ -2,7 +2,6 @@ package jvproxy
 
 import (
 	"fmt"
-	"github.com/seehuhn/jvproxy/cache"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/seehuhn/jvproxy/cache"
 )
 
 func TestParallelAccess(t *testing.T) {

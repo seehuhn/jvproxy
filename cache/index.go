@@ -3,16 +3,17 @@ package cache
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/golang/protobuf/proto"
-	"github.com/seehuhn/jvproxy/cache/pb"
-	"github.com/seehuhn/trace"
-	"github.com/syndtr/goleveldb/leveldb"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/golang/protobuf/proto"
+	"github.com/seehuhn/jvproxy/cache/pb"
+	"github.com/seehuhn/trace"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 const (

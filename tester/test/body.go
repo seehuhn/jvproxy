@@ -2,8 +2,9 @@ package test
 
 import (
 	"bytes"
-	"github.com/seehuhn/mt19937"
 	"io"
+
+	"github.com/seehuhn/mt19937"
 )
 
 // ResponseBodySpec describes a (synthetic) server response.

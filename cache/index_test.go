@@ -1,8 +1,9 @@
 package cache
 
 import (
-	. "gopkg.in/check.v1"
 	"math"
+
+	. "gopkg.in/check.v1"
 )
 
 func (s *MySuite) TestCandidates(c *C) {
