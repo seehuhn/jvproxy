@@ -26,7 +26,7 @@ func getVaryFields(header http.Header) []string {
 }
 
 func getNormalizedHeaders(fields []string, header http.Header) []string {
-	res := []string{}
+	var res []string
 	for _, name := range fields {
 		normalized := httputil.NormalizeHeader(strings.Join(header[name], ","))
 		res = append(res, normalized)

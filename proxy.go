@@ -143,7 +143,7 @@ func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var respData *cache.Entry
 
 	// step 1: check whether any cached responses are available
-	choices := []*cache.Entry{}
+	var choices []*cache.Entry
 	if cacheInfo.canServeFromCache {
 		choices = proxy.cache.Retrieve(req)
 		if len(choices) > 0 {
@@ -357,7 +357,7 @@ func (proxy *Proxy) requestFromUpstream(req *http.Request, stale []*cache.Entry)
 	}
 
 	if conditional && upResp.StatusCode == http.StatusNotModified {
-		selected := []*cache.Entry{}
+		var selected []*cache.Entry
 		done := false
 
 		eTag1 := upResp.Header.Get("Etag")

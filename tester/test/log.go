@@ -20,7 +20,7 @@ func (log *LogEntry) Add(msg string) {
 
 // String formats the log entry in a multi-line, human readable form.
 func (log *LogEntry) String() string {
-	res := []string{}
+	var res []string
 	status := "FAIL"
 	if log.Pass {
 		status = "OK"

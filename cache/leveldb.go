@@ -197,7 +197,7 @@ func urlToKey(url string, header http.Header) []byte {
 	// TODO(voss): check that url contains no '\0' bytes?  To be safe,
 	// maybe encode strings with leading length (using the
 	// encoding/binary module)?
-	res := []byte{}
+	var res []byte
 	res = append(res, []byte(url)...)
 	res = append(res, 0)
 
